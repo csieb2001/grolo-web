@@ -5,7 +5,9 @@ import { compass, polar, sunPath, sunPosition } from "@/lib/solar";
 
 export type SunData = {
   site: { name: string | null; lat: number | null; lon: number | null; strings: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }>;
-          fit?: { updated: number; days: number; strings: Record<string, { status: string; azimuth?: number; tilt?: number; wp?: number; r2?: number; hours?: number; az_range?: number[]; tilt_range?: number[]; peak_w?: number }> } | null } | null;
+          fit?: { updated: number; days: number; strings: Record<string, { status: string; azimuth?: number; tilt?: number; wp?: number; r2?: number; hours?: number; az_range?: number[]; tilt_range?: number[]; peak_w?: number }> } | null;
+          assumed?: Record<string, { tilt?: number; azimuth?: number; wp?: number; source?: string }>;
+          advice?: Advice | null } | null;
   day: { key: string; start: string; end: string; today: string };
   string_peaks: { day: string; string: number; t: string; w: number | null }[];
   strings_day: { t: string; s1: number | null; s2: number | null; s3: number | null; s4: number | null; pv: number | null }[];
@@ -13,6 +15,14 @@ export type SunData = {
   model_day: { t: string; string: number; gti: number | null; expected_w: number | null }[];
 };
 
+export type Advice = {
+  updated: number; period: string[]; site_best: { tilt: number; azimuth: number; kwh_kwp: number }; free_inputs: number;
+  strings: Record<string, { basis: "config" | "fit" | null; unused?: boolean; tilt?: number; azimuth?: number; kwh_kwp?: number; pct_of_best?: number | null;
+    best?: { tilt: number; azimuth: number; kwh_kwp: number; gain_pct: number | null }; same_azimuth?: { tilt: number; kwh_kwp: number; gain_pct: number | null };
+    vertical?: { azimuth: number; kwh_kwp: number; gain_pct: number | null }; flat?: { kwh_kwp: number; gain_pct: number | null };
+    winter_share_pct?: number; best_winter_share_pct?: number; peak_w?: number; wp_eff?: number;
+    shading?: { az_from: number; az_to: number; ratio: number; hours: number; time_from: string | null; time_to: string | null }[]; shading_loss_pct?: number; ratio_median?: number | null }>;
+};
 const TZ = "Europe/Berlin";
 export const STRING_COLORS = ["#f2cc0c", "#ff9830", "#8ab8ff", "#b877d9"];
 const L = {
@@ -23,7 +33,13 @@ const L = {
         heat: "Hour × day per string (30 days)", heatHint: "Row = day (click to select), column = hour. Brightness = mean power.", total: "Total", string: "String", peaks30: "Daily peaks (30 days)",
         model: "Model", panels: "Panels", tilt: "tilt", noStrings: "no panels configured",
         fit: "Estimated orientation", fitFrom: "from measurements", fitOk: "good", fitUncertain: "uncertain", fitInsufficient: "not determinable yet", fitUnused: "no panel", fitHours: "sunny hours",
-        fitHint: "Estimated once a day by the GroLo stack from the hourly curves of the last 30 days against the irradiance model; apply it on the settings page.", fitNone: "no estimate yet", legendFit: "hollow diamond = estimated orientation" },
+        fitHint: "Estimated once a day by the GroLo stack from the hourly curves of the last 30 days against the irradiance model; apply it on the settings page.", fitNone: "no estimate yet", legendFit: "hollow diamond = estimated orientation",
+        assumedLabel: "assumed", expectedAssumed: "Expected curve uses an assumed orientation", fromFit: "from the estimate", fromSiteBest: "site optimum", untilConfigured: "until you enter the panels on the settings page",
+        advice: "Recommendations from the data", adviceBasisConfig: "configured", adviceBasisFit: "estimated", advYear: "kWh per kWp and year", advOfBest: "of the site optimum", advOptimum: "Site optimum",
+        advSameAz: "Same direction, tilt", advVertical: "Vertical (balcony) facing", advFlat: "Flat", advWinter: "winter share", advLever: "Biggest lever", advFine: "Orientation is close to the optimum, nothing to gain by moving the panels.",
+        advShade: "Shading", advShadeText: "between {from} and {to} (sun at {a}–{b}°) only {r} % of the expected power, loss about {loss} % of the sunny-hour energy. Look for an obstacle in that direction.",
+        advNoShade: "No recurring shading found in the last 30 days.", advNoBasis: "Orientation unknown, enter it on the settings page or wait for the estimate.", advFree: "{n} of 4 inputs free: another string, e.g. facing {dir}, would use them.",
+        advFewData: "shading check needs more sunny hours", advPeriod: "Year model" },
   de: { title: "Strings und Sonne", peakToday: "Spitze", at: "um", free: "frei", noPeak: "noch keine Spitze", sunpath: "Sonnenbahn und Tagesspitzen", legendPeaks: "Punkt = Tagesspitze eines Strings (Größe = Leistung), Quadrat = Modulausrichtung",
         solstice: "21. Jun", winter: "21. Dez", equinox: "Tagundnachtgleiche", selected: "gewählter Tag", sunNow: "Sonne", azimuth: "Azimut", elevation: "Höhe", belowHorizon: "unter dem Horizont",
         play: "Tag abspielen", pause: "Pause", now: "Jetzt", prev: "Vortag", next: "Folgetag", today: "heute", noLocation: "Noch kein Standort. Auf der GroLo-Einstellungsseite (Standort und Module) den Ort wählen, dann erscheint hier die Sonnenbahn.",
@@ -31,7 +47,13 @@ const L = {
         heat: "Stunde × Tag je String (30 Tage)", heatHint: "Zeile = Tag (anklicken wählt ihn aus), Spalte = Stunde. Helligkeit = mittlere Leistung.", total: "Gesamt", string: "String", peaks30: "Tagesspitzen (30 Tage)",
         model: "Modell", panels: "Module", tilt: "Neigung", noStrings: "keine Module konfiguriert",
         fit: "Geschätzte Ausrichtung", fitFrom: "aus Messdaten", fitOk: "gut", fitUncertain: "unsicher", fitInsufficient: "noch nicht bestimmbar", fitUnused: "kein Modul", fitHours: "Sonnenstunden",
-        fitHint: "Der GroLo-Stack schätzt täglich aus den Stundenkurven der letzten 30 Tage gegen das Einstrahlungsmodell; übernehmen auf der Einstellungsseite.", fitNone: "noch keine Schätzung", legendFit: "hohle Raute = geschätzte Ausrichtung" },
+        fitHint: "Der GroLo-Stack schätzt täglich aus den Stundenkurven der letzten 30 Tage gegen das Einstrahlungsmodell; übernehmen auf der Einstellungsseite.", fitNone: "noch keine Schätzung", legendFit: "hohle Raute = geschätzte Ausrichtung",
+        assumedLabel: "angenommen", expectedAssumed: "Erwartungskurve mit angenommener Ausrichtung", fromFit: "aus der Schätzung", fromSiteBest: "Standortoptimum", untilConfigured: "bis du die Module auf der Einstellungsseite einträgst",
+        advice: "Empfehlungen aus den Daten", adviceBasisConfig: "konfiguriert", adviceBasisFit: "geschätzt", advYear: "kWh je kWp und Jahr", advOfBest: "des Standortoptimums", advOptimum: "Optimum am Standort",
+        advSameAz: "Gleiche Richtung, Neigung", advVertical: "Senkrecht (Balkon) nach", advFlat: "Flach", advWinter: "Winteranteil", advLever: "Größter Hebel", advFine: "Die Ausrichtung liegt nahe am Optimum, Umbauen bringt nichts.",
+        advShade: "Verschattung", advShadeText: "zwischen {from} und {to} Uhr (Sonne bei {a}–{b}°) nur {r} % der erwarteten Leistung, Verlust etwa {loss} % der Sonnenstunden-Energie. In dieser Richtung nach einem Hindernis schauen.",
+        advNoShade: "Keine wiederkehrende Verschattung in den letzten 30 Tagen gefunden.", advNoBasis: "Ausrichtung unbekannt, auf der Einstellungsseite eintragen oder die Schätzung abwarten.", advFree: "{n} von 4 Eingängen frei: ein weiterer String, z. B. nach {dir}, würde sie nutzen.",
+        advFewData: "Verschattungsprüfung braucht mehr Sonnenstunden", advPeriod: "Jahresmodell" },
 };
 
 const fmtW = (w: number | null | undefined) => w == null ? "–" : Math.abs(w) < 1000 ? `${w.toFixed(0)} W` : `${(w / 1000).toFixed(2)} kW`;
@@ -199,7 +221,8 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
               return <div key={i} className="scard" style={{ background: `rgba(${rgb}, ${0.06 + 0.6 * a})`, borderColor: `rgba(${rgb}, ${0.3 + 0.7 * a})`, boxShadow: a > 0.05 ? `0 0 ${20 * a}px rgba(${rgb}, ${0.6 * a})` : "none" }}>
                 <div className="k">{t.string} {i}</div><div className="v">{p == null ? "–" : fmtW(p)}</div>{e != null && <div className="s">{t.expected} {fmtW(e)}</div>}</div>; })}
           </div>
-          <div className="muted" style={{ fontSize: 12, margin: "10px 0 2px" }}>{t.dayChart}{!hasModel ? ` · ${t.noModel}` : ""}</div>
+          <div className="muted" style={{ fontSize: 12, margin: "10px 0 2px" }}>{t.dayChart}{!hasModel ? ` · ${t.noModel}` : ""}
+            {hasModel && strings.some((i) => d.site?.assumed?.[String(i)] && !cfgOf(i)) && ` · ${t.expectedAssumed} (${strings.filter((i) => d.site?.assumed?.[String(i)] && !cfgOf(i)).map((i) => { const a = d.site!.assumed![String(i)]; return `${t.string} ${i}: ${compass(Number(a.azimuth), lang)} ${a.azimuth}° / ${a.tilt}° / ${a.wp} Wp, ${a.source === "fit" ? t.fromFit : t.fromSiteBest}`; }).join("; ")}) ${t.untilConfigured}`}</div>
           <div style={{ height: 210 }}><ResponsiveContainer><LineChart data={chart}><CartesianGrid stroke="#2c3235" /><XAxis dataKey="label" stroke="#8e8e8e" fontSize={11} minTickGap={30} /><YAxis stroke="#8e8e8e" fontSize={11} unit=" W" /><Tooltip contentStyle={{ background: "#1c1f24", border: "1px solid #2c3235", fontSize: 12 }} formatter={(v) => fmtW(Number(v))} /><Legend />
             {strings.map((i) => <Line key={`s${i}`} type="monotone" dataKey={`s${i}`} name={`${t.string} ${i}`} stroke={STRING_COLORS[i - 1]} dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />)}
             {strings.map((i) => <Line key={`e${i}`} type="monotone" dataKey={`e${i}`} name={`${t.string} ${i} ${t.expected}`} stroke={STRING_COLORS[i - 1]} strokeDasharray="6 4" dot={false} strokeWidth={1.2} connectNulls isAnimationActive={false} />)}
@@ -207,6 +230,7 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
         </div>
       </div>
 
+      {d.site?.advice && <AdviceBox a={d.site.advice} strings={strings} lang={lang} t={t} fmtDate={fmtDate} />}
       <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "16px 0 6px", flexWrap: "wrap" }}>
         <div className="muted" style={{ fontSize: 12 }}>{t.heat} · {t.heatHint}</div><span className="spacer" />
         <div className="toggle">{(["pv", 1, 2, 3, 4] as const).map((m) => <button key={m} className={metric === m ? "on" : ""} onClick={() => setMetric(m)}>{m === "pv" ? t.total : m}</button>)}</div>
@@ -220,6 +244,36 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
       </tbody></table></div>
     </section>
   );
+}
+
+function AdviceBox({ a, strings, lang, t, fmtDate }: { a: Advice; strings: number[]; lang: "de" | "en"; t: (typeof L)["de"]; fmtDate: (iso: string) => string }) {
+  const pct = (v: number | null | undefined) => v == null ? "–" : `${v > 0 ? "+" : ""}${Math.round(v)} %`;
+  const dir = (az: number) => `${compass(az, lang)} ${Math.round(az)}°`;
+  const fill = (s: string, m: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (_, k) => String(m[k] ?? ""));
+  const items: { i: number; lines: string[]; lever?: string }[] = [];
+  for (const i of strings) {
+    const v = a.strings[String(i)]; if (!v || v.unused) continue;
+    if (!v.basis) { items.push({ i, lines: [t.advNoBasis, `${t.advOptimum}: ${dir(a.site_best.azimuth)}, ${t.tilt} ${a.site_best.tilt}° (${a.site_best.kwh_kwp} ${t.advYear})`] }); continue; }
+    const lines: string[] = [];
+    lines.push(`${dir(v.azimuth!)}, ${t.tilt} ${v.tilt}° (${v.basis === "config" ? t.adviceBasisConfig : t.adviceBasisFit}): ${v.kwh_kwp} ${t.advYear}, ${v.pct_of_best} % ${t.advOfBest} (${dir(a.site_best.azimuth)}, ${a.site_best.tilt}°: ${a.site_best.kwh_kwp}). ${t.advWinter} ${v.winter_share_pct} % (${t.advOptimum.toLowerCase()} ${v.best_winter_share_pct} %).`);
+    const opts = [[`${t.advSameAz} ${v.same_azimuth!.tilt}°`, v.same_azimuth!.gain_pct], [`${t.advVertical} ${dir(v.vertical!.azimuth)}`, v.vertical!.gain_pct], [t.advFlat, v.flat!.gain_pct], [`${t.advOptimum} ${dir(v.best!.azimuth)} / ${v.best!.tilt}°`, v.best!.gain_pct]] as [string, number | null][];
+    lines.push(opts.map(([n, g]) => `${n}: ${pct(g)}`).join(" · "));
+    const best = opts.filter(([, g]) => (g ?? 0) >= 5).sort((x, y) => (y[1] ?? 0) - (x[1] ?? 0))[0];
+    const lever = best ? `${t.advLever}: ${best[0]} (${pct(best[1])})` : t.advFine;
+    if (v.shading && v.shading.length) for (const z of v.shading) lines.push(`${t.advShade}: ${fill(t.advShadeText, { from: z.time_from ?? "?", to: z.time_to ?? "?", a: z.az_from, b: z.az_to, r: Math.round(z.ratio * 100), loss: v.shading_loss_pct ?? 0 })}`);
+    else lines.push(v.ratio_median == null ? `${t.advShade}: ${t.advFewData}.` : t.advNoShade);
+    items.push({ i, lines, lever });
+  }
+  if (!items.length && !a.free_inputs) return null;
+  return (
+    <div className="advice">
+      <div className="muted" style={{ fontSize: 12, marginBottom: 6 }}>{t.advice} · {t.advPeriod} {a.period[0]} – {a.period[1]} · {fmtDate(new Date(a.updated * 1000).toISOString())}</div>
+      {items.map((it) => <div key={it.i} className="advitem" style={{ borderLeftColor: STRING_COLORS[it.i - 1] }}>
+        <b style={{ color: STRING_COLORS[it.i - 1] }}>{t.string} {it.i}</b>{it.lever && <span className="lever">{it.lever}</span>}
+        {it.lines.map((l, k) => <div key={k}>{l}</div>)}
+      </div>)}
+      {a.free_inputs > 0 && <div className="advitem" style={{ borderLeftColor: "var(--muted)" }}>{fill(t.advFree, { n: a.free_inputs, dir: dir(a.site_best.azimuth) })}</div>}
+    </div>);
 }
 
 function heatColorOf(i: number) { return ["242,204,12", "255,152,48", "138,184,255", "184,119,217"][i - 1]; }

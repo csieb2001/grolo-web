@@ -8,9 +8,9 @@ type WeatherCurrent = { temperature?: number | null; cloud_cover?: number | null
   wind_speed?: number | null; weather_code?: number | null; is_day?: number | null; condition_en?: string | null; condition_de?: string | null;
   sunrise?: string | null; sunset?: string | null; sunshine_duration_today?: number | null; radiation_sum_today?: number | null };
 type WeatherForecast = { t: string; shortwave_radiation?: number | null; cloud_cover?: number | null; temperature?: number | null; weather_code?: number | null };
-type Site = { name?: string | null; lat?: number | null; lon?: number | null; strings?: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }> };
+type Site = { name?: string | null; lat?: number | null; lon?: number | null; strings?: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }>; assumed?: Record<string, unknown> };
 type ModelRow = { t: string; string: number; gti?: number | null; expected_w?: number | null };
-type Weather = { ts?: string; current?: WeatherCurrent & { sun_azimuth?: number | null; sun_elevation?: number | null }; forecast?: WeatherForecast[]; site?: Site; model?: ModelRow[]; fit?: Record<string, unknown> | null };
+type Weather = { ts?: string; current?: WeatherCurrent & { sun_azimuth?: number | null; sun_elevation?: number | null }; forecast?: WeatherForecast[]; site?: Site; model?: ModelRow[]; fit?: Record<string, unknown> | null; advice?: Record<string, unknown> | null };
 
 type Sample = {
   ts: string; device: string; pv_w: number; out_w: number; bat_w: number; soc: number;
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   }
   let weather = 0;
   const w = body.weather;
-  if (w && (w.current || w.forecast || w.site || w.model || w.fit)) {
+  if (w && (w.current || w.forecast || w.site || w.model || w.fit || w.advice)) {
     const ts = w.ts || new Date().toISOString();
     if (w.current) {
       const c = w.current;
@@ -67,8 +67,12 @@ export async function POST(req: NextRequest) {
       weather++;
     }
     if (w.site && w.site.lat != null && w.site.lon != null) {
-      await sql`INSERT INTO site (id, updated, name, lat, lon, strings) VALUES (1, now(), ${w.site.name ?? null}, ${w.site.lat}, ${w.site.lon}, ${JSON.stringify(w.site.strings || {})}::jsonb)
-        ON CONFLICT (id) DO UPDATE SET updated = now(), name = EXCLUDED.name, lat = EXCLUDED.lat, lon = EXCLUDED.lon, strings = EXCLUDED.strings`;
+      await sql`INSERT INTO site (id, updated, name, lat, lon, strings, assumed) VALUES (1, now(), ${w.site.name ?? null}, ${w.site.lat}, ${w.site.lon}, ${JSON.stringify(w.site.strings || {})}::jsonb, ${JSON.stringify(w.site.assumed || {})}::jsonb)
+        ON CONFLICT (id) DO UPDATE SET updated = now(), name = EXCLUDED.name, lat = EXCLUDED.lat, lon = EXCLUDED.lon, strings = EXCLUDED.strings, assumed = EXCLUDED.assumed`;
+      weather++;
+    }
+    if (w.advice && typeof w.advice === "object") {
+      await sql`INSERT INTO site (id, updated, advice) VALUES (1, now(), ${JSON.stringify(w.advice)}::jsonb) ON CONFLICT (id) DO UPDATE SET advice = EXCLUDED.advice`;
       weather++;
     }
     if (w.fit && typeof w.fit === "object") {
