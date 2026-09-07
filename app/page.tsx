@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { SunSection, type SunData } from "./sun";
 
-type Data = {
+type Data = Partial<SunData> & {
   updated: string | null; device: string | null;
   latest: { pv_w: number; out_w: number; bat_w: number; soc: number; soc1?: number; soc2?: number; soc3?: number; soc4?: number; temp_sys?: number; temp_bat1?: number; temp_bat2?: number; pv_v?: number[]; pv_a?: number[]; packs?: number; status?: string; mode?: string } | null;
   info: { model?: string; dongle_model?: string; dongle_sw?: string; dongle_hw?: string; wifi_dbm?: string; updated?: string } | null;
@@ -47,18 +48,19 @@ const fmtKwh = (k: number | null | undefined) => k == null ? "–" : k < 1 ? `${
 export default function Page() {
   const [lang, setLang] = useState<"en" | "de">("en");
   const [range, setRange] = useState<"24h" | "7d" | "30d">("24h");
+  const [day, setDay] = useState<string>("");
   const [data, setData] = useState<Data | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const t = T[lang];
   useEffect(() => { try { const l = localStorage.getItem("grolo.lang"); if (l === "de" || l === "en") setLang(l); } catch {} }, []);
   useEffect(() => {
     let alive = true;
-    const load = () => fetch(`/api/data?range=${range}`, { cache: "no-store" })
+    const load = () => fetch(`/api/data?range=${range}${day ? `&day=${day}` : ""}`, { cache: "no-store" })
       .then(r => { if (r.status === 401) { window.location.href = "/login"; throw new Error("401"); } if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => { if (alive) { setData(d); setErr(null); } })
       .catch(e => alive && setErr(`${T[lang].apierr} (${e instanceof Error ? e.message : String(e)})`));
     load(); const id = setInterval(load, 30000); return () => { alive = false; clearInterval(id); };
-  }, [range, lang]);
+  }, [range, lang, day]);
   const locale = lang === "de" ? "de-DE" : "en-GB";
   const ageSec = data?.updated ? (Date.now() - new Date(data.updated).getTime()) / 1000 : Infinity;
   const l = data?.latest;
@@ -128,6 +130,8 @@ export default function Page() {
             </div>
           </div>
         </section>
+        {data?.day && <SunSection lang={lang} setDay={setDay} fmtDate={(iso) => new Date(iso).toLocaleDateString(locale, { day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" })}
+          d={{ site: data.site ?? null, day: data.day, string_peaks: data.string_peaks ?? [], strings_day: data.strings_day ?? [], heat: data.heat ?? [], model_day: data.model_day ?? [] }} />}
         <section><h2>{t.weather}</h2>
           {!w ? <div className="muted">{t.wnone}</div> : <>
             <div className="tiles" style={{ marginBottom: 14 }}>

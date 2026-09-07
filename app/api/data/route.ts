@@ -16,6 +16,9 @@ export async function GET(req: NextRequest) {
   if (!(await isAuthorized(req))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   await ensureSchema();
   const range = RANGES[req.nextUrl.searchParams.get("range") || "24h"] || RANGES["24h"];
+  const todayKey = new Date().toLocaleDateString("sv-SE", { timeZone: TZ });
+  const dayParam = req.nextUrl.searchParams.get("day") || "";
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(dayParam) ? dayParam : todayKey;
 
   const latest = await sql`SELECT * FROM samples ORDER BY ts DESC LIMIT 1`;
   const info = await sql`SELECT device, updated, info FROM device_info ORDER BY updated DESC LIMIT 1`;
@@ -49,7 +52,25 @@ export async function GET(req: NextRequest) {
            avg(shortwave_radiation) AS radiation, avg(cloud_cover) AS cloud, avg(temperature) AS temp
     FROM weather_history WHERE ts > now() - make_interval(secs => ${range.seconds}) GROUP BY 1 ORDER BY 1`;
 
-  const todayKey = new Date().toLocaleDateString("sv-SE", { timeZone: TZ });
+  // Strings: Tagesspitzen (30 Tage), 5-Minuten-Verlauf des gewählten Tages, Stunde × Tag, Erwartungsmodell, Standort
+  const site = await sql`SELECT name, lat, lon, strings, updated FROM site WHERE id = 1`;
+  const dayBounds = await sql`SELECT (${day}::date::timestamp AT TIME ZONE ${TZ}) AS start, ((${day}::date + 1)::timestamp AT TIME ZONE ${TZ}) AS "end"`;
+  const peaks = await sql`
+    SELECT DISTINCT ON (day, s) day, s AS string, ts, p FROM (
+      SELECT to_char(ts AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS day, s, ts, pv_v[s] * pv_a[s] AS p
+      FROM samples, generate_series(1, 4) AS s
+      WHERE ts > now() - interval '31 days' AND pv_v IS NOT NULL AND pv_a IS NOT NULL) x
+    WHERE p > 5 ORDER BY day, s, p DESC`;
+  const stringsDay = await sql`
+    SELECT to_timestamp(floor(extract(epoch FROM ts) / 300) * 300) AS t,
+           avg(pv_v[1] * pv_a[1]) AS s1, avg(pv_v[2] * pv_a[2]) AS s2, avg(pv_v[3] * pv_a[3]) AS s3, avg(pv_v[4] * pv_a[4]) AS s4, avg(pv_w) AS pv
+    FROM samples WHERE ts >= ${dayBounds[0].start} AND ts < ${dayBounds[0].end} AND pv_v IS NOT NULL GROUP BY 1 ORDER BY 1`;
+  const heat = await sql`
+    SELECT to_char(ts AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS day, extract(hour FROM ts AT TIME ZONE ${TZ})::int AS hour,
+           avg(pv_v[1] * pv_a[1]) AS s1, avg(pv_v[2] * pv_a[2]) AS s2, avg(pv_v[3] * pv_a[3]) AS s3, avg(pv_v[4] * pv_a[4]) AS s4, avg(pv_w) AS pv
+    FROM samples WHERE ts > now() - interval '31 days' AND pv_v IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2`;
+  const modelDay = await sql`SELECT t, string, gti, expected_w FROM pv_model WHERE t >= ${dayBounds[0].start}::timestamptz - interval '1 hour' AND t < ${dayBounds[0].end}::timestamptz + interval '1 hour' ORDER BY t`;
+
   const todayRow = daily.find((d) => d.day === todayKey);
   const l = latest[0];
   const num = (v: unknown) => (v == null ? null : Number(v));
@@ -63,6 +84,12 @@ export async function GET(req: NextRequest) {
     daily: daily.map((d) => ({ day: d.day, pv_kwh: num(d.pv_kwh), out_kwh: num(d.out_kwh), charge_kwh: num(d.charge_kwh), discharge_kwh: num(d.discharge_kwh) })),
     today: todayRow ? { pv_kwh: num(todayRow.pv_kwh), out_kwh: num(todayRow.out_kwh), charge_kwh: num(todayRow.charge_kwh), discharge_kwh: num(todayRow.discharge_kwh) } : null,
     totals: totals[0] ? { pv_kwh: num(totals[0].pv_kwh), out_kwh: num(totals[0].out_kwh), since: totals[0].since } : null,
+    site: site[0] ? { name: site[0].name, lat: num(site[0].lat), lon: num(site[0].lon), strings: site[0].strings || {}, updated: site[0].updated } : null,
+    day: { key: day, start: dayBounds[0].start, end: dayBounds[0].end, today: todayKey },
+    string_peaks: peaks.map((r) => ({ day: String(r.day), string: Number(r.string), t: r.ts, w: num(r.p) })),
+    strings_day: stringsDay.map((r) => ({ t: r.t, s1: num(r.s1), s2: num(r.s2), s3: num(r.s3), s4: num(r.s4), pv: num(r.pv) })),
+    heat: heat.map((r) => ({ day: String(r.day), hour: Number(r.hour), s1: num(r.s1), s2: num(r.s2), s3: num(r.s3), s4: num(r.s4), pv: num(r.pv) })),
+    model_day: modelDay.map((r) => ({ t: r.t, string: Number(r.string), gti: num(r.gti), expected_w: num(r.expected_w) })),
     weather: {
       current: wcur[0] ? { ...wcur[0], id: undefined } : null,
       forecast: wfc.map((f) => ({ t: f.t, shortwave_radiation: num(f.shortwave_radiation), cloud_cover: num(f.cloud_cover), temperature: num(f.temperature), weather_code: f.weather_code })),

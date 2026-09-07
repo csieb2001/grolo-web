@@ -37,17 +37,26 @@ The push service in the stack needs `WEB_URL=https://grolo-web.vercel.app` and `
     "current": { "temperature": 9.1, "cloud_cover": 29, "shortwave_radiation": 412.0, "direct_radiation": 300.0, "diffuse_radiation": 112.0,
                  "wind_speed": 3.2, "weather_code": 1, "is_day": 1, "condition_en": "Mainly clear", "condition_de": "Überwiegend klar",
                  "sunrise": "2026-09-06T06:39:00+02:00", "sunset": "2026-09-06T20:02:00+02:00", "sunshine_duration_today": 25400, "radiation_sum_today": 3.9 },
-    "forecast": [{ "t": "2026-09-06T11:00:00Z", "shortwave_radiation": 300, "cloud_cover": 40, "temperature": 12.3, "weather_code": 3 }]
+    "forecast": [{ "t": "2026-09-06T11:00:00Z", "shortwave_radiation": 300, "cloud_cover": 40, "temperature": 12.3, "weather_code": 3 }],
+    "site": { "name": "25421 Pinneberg", "lat": 53.64, "lon": 9.81, "strings": { "1": { "tilt": 30, "azimuth": 180, "wp": 440 } } },
+    "model": [{ "t": "2026-09-06T10:30:00Z", "string": 1, "gti": 612.0, "expected_w": 229.0 }]
   }
 }
 ```
+
+`weather.current` may also carry `sun_azimuth` / `sun_elevation`. `weather.site` is the location and panel orientation from
+the GroLo settings page, `weather.model` the expected power per string and hour (transposed Open-Meteo irradiance).
 
 All fields are optional except `ts` and `device` per sample; `info` and `weather` may be missing. Samples are upserted on
 `(device, ts)`, `weather.current` is kept as a single row plus a history row per timestamp, `weather.forecast` is upserted per
 hour so newer forecasts overwrite older ones. Tables are created on first use.
 
-`GET /api/data?range=24h|7d|30d` (cookie required) returns `latest`, `series` (bucketed), `daily` (kWh per day from minute
-averages), `today`, `totals`, `info` and `weather { current, forecast (next 48 h), history }`.
+`GET /api/data?range=24h|7d|30d&day=YYYY-MM-DD` (cookie required) returns `latest`, `series` (bucketed), `daily` (kWh per day
+from minute averages), `today`, `totals`, `info`, `weather { current, forecast (next 48 h), history }` and for the strings
+section `site`, `day` (bounds of the selected day, default today), `string_peaks` (daily peak per string, 30 days),
+`strings_day` (5-minute power per string of the selected day), `heat` (hourly mean per string and day, 30 days) and
+`model_day` (expected power per string of the selected day). The sun path on the page is computed in the browser
+(`lib/solar.ts`, NOAA algorithm) from `site.lat/lon`.
 
 Auth: `POST /api/login` (form field `password`) sets the `grolo_auth` cookie for 30 days, `/api/logout` clears it. Everything
 except `/login`, `/api/login`, `/api/ingest` and static assets requires the cookie (`proxy.ts`).

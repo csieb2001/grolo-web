@@ -32,6 +32,14 @@ export function ensureSchema() {
       await sql`CREATE TABLE IF NOT EXISTS weather_forecast (
         t timestamptz PRIMARY KEY, shortwave_radiation real, cloud_cover real, temperature real, weather_code smallint
       )`;
+      await sql`ALTER TABLE weather_current ADD COLUMN IF NOT EXISTS sun_azimuth real, ADD COLUMN IF NOT EXISTS sun_elevation real`;
+      // Standort und Module (Einstellungsseite des Stacks), Erwartungsmodell je String (Sidecar weather)
+      await sql`CREATE TABLE IF NOT EXISTS site (
+        id smallint PRIMARY KEY DEFAULT 1, updated timestamptz NOT NULL, name text, lat real, lon real, strings jsonb
+      )`;
+      await sql`CREATE TABLE IF NOT EXISTS pv_model (
+        t timestamptz NOT NULL, string smallint NOT NULL, gti real, expected_w real, PRIMARY KEY (t, string)
+      )`;
     })();
   }
   return ready;

@@ -22,3 +22,20 @@ section h2 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; } th, td { padding: 6px; border-bottom: 1px solid var(--line); text-align: left; } th { color: var(--muted); font-size: 12px; }
 footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 20px 30px; }
 .muted { color: var(--muted); }
+
+/* Strings und Sonne */
+.sunwrap { display: grid; grid-template-columns: minmax(280px, 440px) 1fr; gap: 18px; align-items: start; } @media (max-width: 900px) { .sunwrap { grid-template-columns: 1fr; } }
+.sunpath { width: 100%; height: auto; display: block; }
+.dayctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.dayctl button { background: #2f3540; color: var(--text); border: 1px solid #444b54; border-radius: 4px; padding: 5px 10px; font-size: 13px; cursor: pointer; } .dayctl button.on { background: var(--soc); color: #fff; } .dayctl button:disabled { opacity: .4; cursor: default; }
+input[type=range] { accent-color: var(--pv); }
+.stringcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+.scard { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; transition: background .15s, box-shadow .15s; }
+.scard .k { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; } .scard .v { font-size: 22px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; } .scard .s { color: var(--muted); font-size: 11.5px; }
+.heatwrap { overflow-x: auto; }
+table.heat { border-collapse: separate; border-spacing: 2px; font-size: 11px; width: auto; }
+table.heat th { color: var(--muted); font-weight: 500; font-size: 10.5px; padding: 1px 4px; border: 0; text-align: center; white-space: nowrap; }
+table.heat tbody th { text-align: right; cursor: pointer; } table.heat tbody tr:hover th { color: var(--text); }
+table.heat td { width: 22px; height: 16px; padding: 0; border: 0; border-radius: 2px; background: #1c1f24; }
+table.heat td.pk { width: auto; padding: 0 6px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+table.heat tr.sel th { color: var(--pv); } table.heat tr.sel td { outline: 1px solid rgba(242,204,12,.5); }
