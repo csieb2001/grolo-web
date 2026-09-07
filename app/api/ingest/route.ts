@@ -10,7 +10,7 @@ type WeatherCurrent = { temperature?: number | null; cloud_cover?: number | null
 type WeatherForecast = { t: string; shortwave_radiation?: number | null; cloud_cover?: number | null; temperature?: number | null; weather_code?: number | null };
 type Site = { name?: string | null; lat?: number | null; lon?: number | null; strings?: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }> };
 type ModelRow = { t: string; string: number; gti?: number | null; expected_w?: number | null };
-type Weather = { ts?: string; current?: WeatherCurrent & { sun_azimuth?: number | null; sun_elevation?: number | null }; forecast?: WeatherForecast[]; site?: Site; model?: ModelRow[] };
+type Weather = { ts?: string; current?: WeatherCurrent & { sun_azimuth?: number | null; sun_elevation?: number | null }; forecast?: WeatherForecast[]; site?: Site; model?: ModelRow[]; fit?: Record<string, unknown> | null };
 
 type Sample = {
   ts: string; device: string; pv_w: number; out_w: number; bat_w: number; soc: number;
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   }
   let weather = 0;
   const w = body.weather;
-  if (w && (w.current || w.forecast || w.site || w.model)) {
+  if (w && (w.current || w.forecast || w.site || w.model || w.fit)) {
     const ts = w.ts || new Date().toISOString();
     if (w.current) {
       const c = w.current;
@@ -69,6 +69,10 @@ export async function POST(req: NextRequest) {
     if (w.site && w.site.lat != null && w.site.lon != null) {
       await sql`INSERT INTO site (id, updated, name, lat, lon, strings) VALUES (1, now(), ${w.site.name ?? null}, ${w.site.lat}, ${w.site.lon}, ${JSON.stringify(w.site.strings || {})}::jsonb)
         ON CONFLICT (id) DO UPDATE SET updated = now(), name = EXCLUDED.name, lat = EXCLUDED.lat, lon = EXCLUDED.lon, strings = EXCLUDED.strings`;
+      weather++;
+    }
+    if (w.fit && typeof w.fit === "object") {
+      await sql`INSERT INTO site (id, updated, fit) VALUES (1, now(), ${JSON.stringify(w.fit)}::jsonb) ON CONFLICT (id) DO UPDATE SET fit = EXCLUDED.fit`;
       weather++;
     }
     for (const m of (w.model || []).slice(0, 400)) {

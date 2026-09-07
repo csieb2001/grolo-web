@@ -39,3 +39,5 @@ table.heat tbody th { text-align: right; cursor: pointer; } table.heat tbody tr:
 table.heat td { width: 22px; height: 16px; padding: 0; border: 0; border-radius: 2px; background: #1c1f24; }
 table.heat td.pk { width: auto; padding: 0 6px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 table.heat tr.sel th { color: var(--pv); } table.heat tr.sel td { outline: 1px solid rgba(242,204,12,.5); }
+.fitrow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: -4px 0 12px; font-size: 12px; }
+.fitchip { border: 1px solid; border-radius: 12px; padding: 2px 10px; font-size: 12px; background: #1c1f24; }

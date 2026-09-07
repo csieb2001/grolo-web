@@ -4,7 +4,8 @@ import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, X
 import { compass, polar, sunPath, sunPosition } from "@/lib/solar";
 
 export type SunData = {
-  site: { name: string | null; lat: number | null; lon: number | null; strings: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }> } | null;
+  site: { name: string | null; lat: number | null; lon: number | null; strings: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }>;
+          fit?: { updated: number; days: number; strings: Record<string, { status: string; azimuth?: number; tilt?: number; wp?: number; r2?: number; hours?: number; az_range?: number[]; tilt_range?: number[]; peak_w?: number }> } | null } | null;
   day: { key: string; start: string; end: string; today: string };
   string_peaks: { day: string; string: number; t: string; w: number | null }[];
   strings_day: { t: string; s1: number | null; s2: number | null; s3: number | null; s4: number | null; pv: number | null }[];
@@ -20,13 +21,17 @@ const L = {
         play: "Play day", pause: "Pause", now: "Now", prev: "previous day", next: "next day", today: "today", noLocation: "No location yet. Choose the place on the GroLo settings page (Location and panels), then the sun path appears here.",
         dayChart: "Measured vs. expected", expected: "expected", measured: "measured", noModel: "For the expected curve enter tilt, azimuth and Wp per string on the GroLo settings page.",
         heat: "Hour × day per string (30 days)", heatHint: "Row = day (click to select), column = hour. Brightness = mean power.", total: "Total", string: "String", peaks30: "Daily peaks (30 days)",
-        model: "Model", panels: "Panels", tilt: "tilt", noStrings: "no panels configured" },
+        model: "Model", panels: "Panels", tilt: "tilt", noStrings: "no panels configured",
+        fit: "Estimated orientation", fitFrom: "from measurements", fitOk: "good", fitUncertain: "uncertain", fitInsufficient: "not determinable yet", fitUnused: "no panel", fitHours: "sunny hours",
+        fitHint: "Estimated once a day by the GroLo stack from the hourly curves of the last 30 days against the irradiance model; apply it on the settings page.", fitNone: "no estimate yet", legendFit: "hollow diamond = estimated orientation" },
   de: { title: "Strings und Sonne", peakToday: "Spitze", at: "um", free: "frei", noPeak: "noch keine Spitze", sunpath: "Sonnenbahn und Tagesspitzen", legendPeaks: "Punkt = Tagesspitze eines Strings (Größe = Leistung), Quadrat = Modulausrichtung",
         solstice: "21. Jun", winter: "21. Dez", equinox: "Tagundnachtgleiche", selected: "gewählter Tag", sunNow: "Sonne", azimuth: "Azimut", elevation: "Höhe", belowHorizon: "unter dem Horizont",
         play: "Tag abspielen", pause: "Pause", now: "Jetzt", prev: "Vortag", next: "Folgetag", today: "heute", noLocation: "Noch kein Standort. Auf der GroLo-Einstellungsseite (Standort und Module) den Ort wählen, dann erscheint hier die Sonnenbahn.",
         dayChart: "Gemessen vs. erwartet", expected: "erwartet", measured: "gemessen", noModel: "Für die Erwartungskurve auf der GroLo-Einstellungsseite Neigung, Azimut und Wp je String eintragen.",
         heat: "Stunde × Tag je String (30 Tage)", heatHint: "Zeile = Tag (anklicken wählt ihn aus), Spalte = Stunde. Helligkeit = mittlere Leistung.", total: "Gesamt", string: "String", peaks30: "Tagesspitzen (30 Tage)",
-        model: "Modell", panels: "Module", tilt: "Neigung", noStrings: "keine Module konfiguriert" },
+        model: "Modell", panels: "Module", tilt: "Neigung", noStrings: "keine Module konfiguriert",
+        fit: "Geschätzte Ausrichtung", fitFrom: "aus Messdaten", fitOk: "gut", fitUncertain: "unsicher", fitInsufficient: "noch nicht bestimmbar", fitUnused: "kein Modul", fitHours: "Sonnenstunden",
+        fitHint: "Der GroLo-Stack schätzt täglich aus den Stundenkurven der letzten 30 Tage gegen das Einstrahlungsmodell; übernehmen auf der Einstellungsseite.", fitNone: "noch keine Schätzung", legendFit: "hohle Raute = geschätzte Ausrichtung" },
 };
 
 const fmtW = (w: number | null | undefined) => w == null ? "–" : Math.abs(w) < 1000 ? `${w.toFixed(0)} W` : `${(w / 1000).toFixed(2)} kW`;
@@ -139,6 +144,11 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
               {c?.tilt != null && c?.azimuth != null ? ` · ${t.panels}: ${compass(Number(c.azimuth), lang)} ${Number(c.azimuth).toFixed(0)}° / ${t.tilt} ${Number(c.tilt).toFixed(0)}°${c.wp ? ` / ${Number(c.wp).toFixed(0)} Wp` : ""}` : ""}</div></div>); })}
       </div>
 
+      {d.site?.fit && (() => { const f = d.site!.fit!; const rows = strings.map((i) => [i, f.strings?.[String(i)]] as const).filter(([, v]) => v && v.status !== "unused");
+        return rows.length ? <div className="fitrow"><span className="muted">{t.fit} {t.fitFrom} · {new Date(f.updated * 1000).toLocaleDateString(locale, { day: "2-digit", month: "2-digit", timeZone: TZ })} · {f.days} d</span>
+          {rows.map(([i, v]) => <span key={i} className="fitchip" style={{ borderColor: STRING_COLORS[i - 1] }}><b style={{ color: STRING_COLORS[i - 1] }}>{t.string} {i}</b>{" "}
+            {v!.status === "insufficient" ? `${t.fitInsufficient} (${v!.hours ?? 0} ${t.fitHours})` : `${compass(v!.azimuth!, lang)} ${v!.azimuth}° / ${t.tilt} ${v!.tilt}° / ${v!.wp} Wp · R² ${v!.r2?.toFixed(2)} (${v!.status === "ok" ? t.fitOk : t.fitUncertain}, ${v!.hours} ${t.fitHours})`}</span>)}
+          <span className="muted" style={{ fontSize: 11 }}>{t.fitHint}</span></div> : null; })()}
       <div className="sunwrap">
         <div>
           <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{t.sunpath} · {d.site?.name || (lat != null ? `${lat.toFixed(3)}, ${lon?.toFixed(3)}` : "")}</div>
@@ -159,13 +169,15 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
                 return <g key={p.ms}><circle cx={q.x} cy={q.y} r={2} fill="#f2cc0c" />{h % 2 === 0 && <text x={q.x} y={q.y - 5} textAnchor="middle" fill="#c9b04a" fontSize="8">{h}</text>}</g>; })}
               {strings.map((i) => { const c = cfgOf(i); if (c?.tilt == null || c?.azimuth == null) return null; const q = polar(Number(c.azimuth), 90 - Number(c.tilt), cx, cy, R);
                 return <g key={i}><rect x={q.x - 5} y={q.y - 5} width={10} height={10} fill={STRING_COLORS[i - 1]} stroke="#fff" strokeWidth={1} transform={`rotate(45 ${q.x} ${q.y})`} /><text x={q.x + 8} y={q.y + 4} fill={STRING_COLORS[i - 1]} fontSize="9">S{i}</text><title>{t.string} {i}: {Number(c.azimuth).toFixed(0)}° / {Number(c.tilt).toFixed(0)}°</title></g>; })}
+              {strings.map((i) => { const v = d.site?.fit?.strings?.[String(i)]; if (!v || v.status !== "ok" && v.status !== "uncertain" || v.azimuth == null || v.tilt == null) return null; const q = polar(v.azimuth, 90 - v.tilt, cx, cy, R);
+                return <g key={`fit${i}`}><rect x={q.x - 6} y={q.y - 6} width={12} height={12} fill="none" stroke={STRING_COLORS[i - 1]} strokeWidth={1.5} strokeDasharray={v.status === "ok" ? undefined : "2 2"} transform={`rotate(45 ${q.x} ${q.y})`} /><title>{t.fit} {t.string} {i}: {v.azimuth}° / {v.tilt}° (R² {v.r2?.toFixed(2)})</title></g>; })}
               {peakDots.map((p) => <circle key={`${p.day}-${p.string}`} cx={p.x} cy={p.y} r={2.5 + 6 * ((p.w ?? 0) / maxPeak)} fill={STRING_COLORS[p.string - 1]} fillOpacity={p.day === d.day.key ? 1 : 0.55} stroke={p.day === d.day.key ? "#fff" : "none"} strokeWidth={1}>
                 <title>{t.string} {p.string} · {fmtDate(p.t)} {fmtTime(p.ms)} · {fmtW(p.w)} · {t.azimuth} {p.azimuth.toFixed(0)}°, {t.elevation} {p.elevation.toFixed(0)}°</title></circle>)}
               {sun && (() => { const q = polar(sun.azimuth, sun.elevation, cx, cy, R); const up = sun.elevation > 0; return (
                 <g><circle cx={q.x} cy={q.y} r={up ? 9 : 6} fill={up ? "#ffe066" : "#3a3f46"} stroke={up ? "#fff3b0" : "#5d6368"} strokeWidth={1.5} filter={up ? "url(#glow)" : undefined} />
                   <title>{t.sunNow} {fmtTime(curMs)}: {t.azimuth} {sun.azimuth.toFixed(0)}° ({compass(sun.azimuth, lang)}), {t.elevation} {sun.elevation.toFixed(1)}°</title></g>); })()}
             </svg>)}
-          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>— {t.selected} · ╌ {t.solstice} / {t.winter} · ··· {t.equinox} · {t.legendPeaks}</div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>— {t.selected} · ╌ {t.solstice} / {t.winter} · ··· {t.equinox} · {t.legendPeaks} · {t.legendFit}</div>
         </div>
 
         <div>
