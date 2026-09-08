@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { compass, polar, sunPath, sunPosition } from "@/lib/solar";
 
@@ -175,7 +175,8 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
   const shift = (n: number) => { const dt = new Date(dayStart + 12 * 3600000 + n * 86400000); setDay(dt.toLocaleDateString("sv-SE", { timeZone: TZ })); };
 
   // ---- Allzeit-Kachel: Hoch (höchstes 30-s-Sample) und Mittel bei Tageslicht über alle Tage mit Daten
-  const allTimeTile = (key: string, a: AllTime | undefined, label: string, color: string) => {
+  const [allStr, setAllStr] = useState<1 | 2 | 3 | 4>(1);
+  const allTimeTile = (key: string, a: AllTime | undefined, label: ReactNode, color: string) => {
     const all = d.alltime;
     const highMs = a?.high_t ? new Date(a.high_t).getTime() : null;
     const sunAtHigh = highMs != null && lat != null && lon != null ? sunPosition(highMs, lat, lon) : null;
@@ -205,7 +206,9 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
         {strings.length > 1 && <div className="tile"><div className="k">{t.allStrings} · {t.avgDay} {isToday ? t.today : fmtDate(d.day.start)}</div>
           <div className="v" style={{ color: "var(--pv)" }}>{dayStats.total.avg != null ? fmtW(dayStats.total.avg) : "–"}</div>
           <div className="s">{t.energyDay} {fmtWh(dayStats.total.wh)}{dayStats.total.wh30 != null ? ` · ${t.avg30} ${fmtWh(dayStats.total.wh30)} ${t.perDay}` : ""}</div></div>}
-        {strings.map((i) => allTimeTile(`all${i}`, d.alltime?.strings?.[String(i)], `${t.string} ${i}`, STRING_COLORS[i - 1]))}
+        {strings.length > 0 && allTimeTile("allstr", d.alltime?.strings?.[String(allStr)],
+          <>{t.string} <span className="toggle mini">{([1, 2, 3, 4] as const).map((i) => <button key={i} className={allStr === i ? "on" : ""} style={allStr === i ? { background: STRING_COLORS[i - 1], color: "#111" } : undefined} onClick={() => setAllStr(i)}>{i}</button>)}</span></>,
+          STRING_COLORS[allStr - 1])}
         {strings.length > 0 && allTimeTile("alltotal", d.alltime?.total, t.allStrings, "var(--pv)")}
       </div>
 
