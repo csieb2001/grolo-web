@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { compass, polar, sunPath, sunPosition } from "@/lib/solar";
 
 export type SunData = {
@@ -223,7 +223,10 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
           </div>
           <div className="muted" style={{ fontSize: 12, margin: "10px 0 2px" }}>{t.dayChart}{!hasModel ? ` · ${t.noModel}` : ""}
             {hasModel && strings.some((i) => d.site?.assumed?.[String(i)] && !cfgOf(i)) && ` · ${t.expectedAssumed} (${strings.filter((i) => d.site?.assumed?.[String(i)] && !cfgOf(i)).map((i) => { const a = d.site!.assumed![String(i)]; return `${t.string} ${i}: ${compass(Number(a.azimuth), lang)} ${a.azimuth}° / ${a.tilt}° / ${a.wp} Wp, ${a.source === "fit" ? t.fromFit : t.fromSiteBest}`; }).join("; ")}) ${t.untilConfigured}`}</div>
-          <div style={{ height: 210 }}><ResponsiveContainer><LineChart data={chart}><CartesianGrid stroke="#2c3235" /><XAxis dataKey="label" stroke="#8e8e8e" fontSize={11} minTickGap={30} /><YAxis stroke="#8e8e8e" fontSize={11} unit=" W" /><Tooltip contentStyle={{ background: "#1c1f24", border: "1px solid #2c3235", fontSize: 12 }} formatter={(v) => fmtW(Number(v))} /><Legend />
+          <div style={{ height: 210 }}><ResponsiveContainer><LineChart data={chart}><CartesianGrid stroke="#2c3235" />
+            <XAxis dataKey="ms" type="number" domain={[dayStart, dayStart + 86400000]} ticks={Array.from({ length: 9 }, (_, k) => dayStart + k * 3 * 3600000)} tickFormatter={(v) => fmtTime(Number(v))} stroke="#8e8e8e" fontSize={11} />
+            <YAxis stroke="#8e8e8e" fontSize={11} unit=" W" /><Tooltip contentStyle={{ background: "#1c1f24", border: "1px solid #2c3235", fontSize: 12 }} formatter={(v) => fmtW(Number(v))} labelFormatter={(v) => fmtTime(Number(v))} /><Legend />
+            {curMs >= dayStart && curMs <= dayStart + 86400000 && <ReferenceLine x={curMs} stroke="#fff" strokeDasharray="3 3" label={{ value: minute != null ? fmtTime(curMs) : `${t.now} ${fmtTime(curMs)}`, position: "insideTopLeft", fill: "#d8d9da", fontSize: 11 }} />}
             {strings.map((i) => <Line key={`s${i}`} type="monotone" dataKey={`s${i}`} name={`${t.string} ${i}`} stroke={STRING_COLORS[i - 1]} dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />)}
             {strings.map((i) => <Line key={`e${i}`} type="monotone" dataKey={`e${i}`} name={`${t.string} ${i} ${t.expected}`} stroke={STRING_COLORS[i - 1]} strokeDasharray="6 4" dot={false} strokeWidth={1.2} connectNulls isAnimationActive={false} />)}
           </LineChart></ResponsiveContainer></div>
