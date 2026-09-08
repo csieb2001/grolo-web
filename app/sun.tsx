@@ -206,7 +206,7 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
           <div className="v" style={{ color: "var(--pv)" }}>{dayStats.total.avg != null ? fmtW(dayStats.total.avg) : "–"}</div>
           <div className="s">{t.energyDay} {fmtWh(dayStats.total.wh)}{dayStats.total.wh30 != null ? ` · ${t.avg30} ${fmtWh(dayStats.total.wh30)} ${t.perDay}` : ""}</div></div>}
         {strings.map((i) => allTimeTile(`all${i}`, d.alltime?.strings?.[String(i)], `${t.string} ${i}`, STRING_COLORS[i - 1]))}
-        {strings.length > 1 && allTimeTile("alltotal", d.alltime?.total, t.allStrings, "var(--pv)")}
+        {strings.length > 0 && allTimeTile("alltotal", d.alltime?.total, t.allStrings, "var(--pv)")}
       </div>
 
       {d.site?.fit && (() => { const f = d.site!.fit!; const rows = strings.map((i) => [i, f.strings?.[String(i)]] as const).filter(([, v]) => v && v.status !== "unused");
