@@ -15,6 +15,7 @@ section h2 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
 .tile .k { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
 .tile .v { font-size: 26px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; } .tile .v small { font-size: 13px; font-weight: 500; margin-left: 3px; color: var(--muted); }
 .tile .s { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.tile .alltime { display: flex; gap: 16px; flex-wrap: wrap; } .tile .alltime .s { margin-top: 0; font-size: 11px; }
 .charts { display: grid; grid-template-columns: 2fr 1fr; gap: 18px; } @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
 .chart { height: 280px; }
 .toggle { display: inline-flex; border: 1px solid #444b54; border-radius: 4px; overflow: hidden; }

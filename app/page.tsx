@@ -131,7 +131,7 @@ export default function Page() {
           </div>
         </section>
         {data?.day && <SunSection lang={lang} setDay={setDay} fmtDate={(iso) => new Date(iso).toLocaleDateString(locale, { day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" })}
-          d={{ site: data.site ?? null, day: data.day, string_peaks: data.string_peaks ?? [], strings_day: data.strings_day ?? [], heat: data.heat ?? [], model_day: data.model_day ?? [] }} />}
+          d={{ site: data.site ?? null, day: data.day, string_peaks: data.string_peaks ?? [], strings_day: data.strings_day ?? [], heat: data.heat ?? [], model_day: data.model_day ?? [], alltime: data.alltime ?? null }} />}
         <section><h2>{t.weather}</h2>
           {!w ? <div className="muted">{t.wnone}</div> : <>
             <div className="tiles" style={{ marginBottom: 14 }}>

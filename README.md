@@ -54,8 +54,10 @@ hour so newer forecasts overwrite older ones. Tables are created on first use.
 `GET /api/data?range=24h|7d|30d&day=YYYY-MM-DD` (cookie required) returns `latest`, `series` (bucketed), `daily` (kWh per day
 from minute averages), `today`, `totals`, `info`, `weather { current, forecast (next 48 h), history }` and for the strings
 section `site`, `day` (bounds of the selected day, default today), `string_peaks` (daily peak per string, 30 days),
-`strings_day` (5-minute power per string of the selected day), `heat` (hourly mean per string and day, 30 days) and
-`model_day` (expected power per string of the selected day). The sun path on the page is computed in the browser
+`strings_day` (5-minute power per string of the selected day), `heat` (hourly mean per string and day, 30 days),
+`model_day` (expected power per string of the selected day) and `alltime` (per string and total: highest 30-second sample
+with its time and the mean power during daylight over all minutes with data; daylight = sun elevation > 0 from an
+approximation in SQL using `site.lat/lon`, central Germany if no location is set). The sun path on the page is computed in the browser
 (`lib/solar.ts`, NOAA algorithm) from `site.lat/lon`.
 
 Auth: `POST /api/login` (form field `password`) sets the `grolo_auth` cookie for 30 days, `/api/logout` clears it. Everything

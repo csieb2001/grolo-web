@@ -13,7 +13,9 @@ export type SunData = {
   strings_day: { t: string; s1: number | null; s2: number | null; s3: number | null; s4: number | null; pv: number | null }[];
   heat: { day: string; hour: number; s1: number | null; s2: number | null; s3: number | null; s4: number | null; pv: number | null }[];
   model_day: { t: string; string: number; gti: number | null; expected_w: number | null }[];
+  alltime?: { since: string | null; days: number; minutes: number; total: AllTime; strings: Record<string, AllTime> } | null;
 };
+export type AllTime = { avg_w: number | null; high_w: number | null; high_t: string | null };
 
 export type Advice = {
   updated: number; period: string[]; site_best: { tilt: number; azimuth: number; kwh_kwp: number }; free_inputs: number;
@@ -35,6 +37,7 @@ const L = {
         fit: "Estimated orientation", fitFrom: "from measurements", fitOk: "good", fitUncertain: "uncertain", fitInsufficient: "not determinable yet", fitUnused: "no panel", fitHours: "sunny hours",
         fitHint: "Estimated once a day by the GroLo stack from the hourly curves of the last 30 days against the irradiance model; apply it on the settings page.", fitNone: "no estimate yet", legendFit: "hollow diamond = estimated orientation",
         avgDay: "Ø daylight", energyDay: "energy", avg30: "Ø 30 days", allStrings: "All strings", perDay: "per day",
+        alltime: "all-time", allHigh: "high", allAvg: "Ø daylight", since: "since", days: "days", noData: "no data yet",
         assumedLabel: "assumed", expectedAssumed: "Expected curve uses an assumed orientation", fromFit: "from the estimate", fromSiteBest: "site optimum", untilConfigured: "until you enter the panels on the settings page",
         advice: "Recommendations from the data", adviceBasisConfig: "configured", adviceBasisFit: "estimated", advYear: "kWh per kWp and year", advOfBest: "of the site optimum", advOptimum: "Site optimum",
         advSameAz: "Same direction, tilt", advVertical: "Vertical (balcony) facing", advFlat: "Flat", advWinter: "winter share", advLever: "Biggest lever", advFine: "Orientation is close to the optimum, nothing to gain by moving the panels.",
@@ -50,6 +53,7 @@ const L = {
         fit: "Geschätzte Ausrichtung", fitFrom: "aus Messdaten", fitOk: "gut", fitUncertain: "unsicher", fitInsufficient: "noch nicht bestimmbar", fitUnused: "kein Modul", fitHours: "Sonnenstunden",
         fitHint: "Der GroLo-Stack schätzt täglich aus den Stundenkurven der letzten 30 Tage gegen das Einstrahlungsmodell; übernehmen auf der Einstellungsseite.", fitNone: "noch keine Schätzung", legendFit: "hohle Raute = geschätzte Ausrichtung",
         avgDay: "Ø bei Tageslicht", energyDay: "Energie", avg30: "Ø 30 Tage", allStrings: "Alle Strings", perDay: "pro Tag",
+        alltime: "Allzeit", allHigh: "Hoch", allAvg: "Ø bei Tageslicht", since: "seit", days: "Tage", noData: "noch keine Daten",
         assumedLabel: "angenommen", expectedAssumed: "Erwartungskurve mit angenommener Ausrichtung", fromFit: "aus der Schätzung", fromSiteBest: "Standortoptimum", untilConfigured: "bis du die Module auf der Einstellungsseite einträgst",
         advice: "Empfehlungen aus den Daten", adviceBasisConfig: "konfiguriert", adviceBasisFit: "geschätzt", advYear: "kWh je kWp und Jahr", advOfBest: "des Standortoptimums", advOptimum: "Optimum am Standort",
         advSameAz: "Gleiche Richtung, Neigung", advVertical: "Senkrecht (Balkon) nach", advFlat: "Flach", advWinter: "Winteranteil", advLever: "Größter Hebel", advFine: "Die Ausrichtung liegt nahe am Optimum, Umbauen bringt nichts.",
@@ -170,6 +174,20 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
   const heatColor = metric === "pv" ? "242,204,12" : ["242,204,12", "255,152,48", "138,184,255", "184,119,217"][metric - 1];
   const shift = (n: number) => { const dt = new Date(dayStart + 12 * 3600000 + n * 86400000); setDay(dt.toLocaleDateString("sv-SE", { timeZone: TZ })); };
 
+  // ---- Allzeit-Kachel: Hoch (höchstes 30-s-Sample) und Mittel bei Tageslicht über alle Tage mit Daten
+  const allTimeTile = (key: string, a: AllTime | undefined, label: string, color: string) => {
+    const all = d.alltime;
+    const highMs = a?.high_t ? new Date(a.high_t).getTime() : null;
+    const sunAtHigh = highMs != null && lat != null && lon != null ? sunPosition(highMs, lat, lon) : null;
+    return (
+      <div className="tile" key={key}><div className="k">{label} · {t.alltime}{all?.since ? ` ${t.since} ${fmtDate(all.since)}` : ""}</div>
+        <div className="alltime">
+          <div><div className="v" style={{ color }}>{fmtW(a?.avg_w)}</div><div className="s">{t.allAvg}</div></div>
+          <div><div className="v" style={{ color }}>{fmtW(a?.high_w)}</div><div className="s">{t.allHigh}</div></div>
+        </div>
+        <div className="s">{highMs != null ? `${t.allHigh} ${fmtDate(a!.high_t!)} ${t.at} ${fmtTime(highMs)}${sunAtHigh ? ` · ${t.sunNow} ${compass(sunAtHigh.azimuth, lang)} ${sunAtHigh.elevation.toFixed(0)}°` : ""}${all?.days ? ` · ${all.days} ${t.days}` : ""}` : t.noData}</div></div>);
+  };
+
   return (
     <section>
       <h2>{t.title}</h2>
@@ -187,6 +205,8 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
         {strings.length > 1 && <div className="tile"><div className="k">{t.allStrings} · {t.avgDay} {isToday ? t.today : fmtDate(d.day.start)}</div>
           <div className="v" style={{ color: "var(--pv)" }}>{dayStats.total.avg != null ? fmtW(dayStats.total.avg) : "–"}</div>
           <div className="s">{t.energyDay} {fmtWh(dayStats.total.wh)}{dayStats.total.wh30 != null ? ` · ${t.avg30} ${fmtWh(dayStats.total.wh30)} ${t.perDay}` : ""}</div></div>}
+        {strings.map((i) => allTimeTile(`all${i}`, d.alltime?.strings?.[String(i)], `${t.string} ${i}`, STRING_COLORS[i - 1]))}
+        {strings.length > 1 && allTimeTile("alltotal", d.alltime?.total, t.allStrings, "var(--pv)")}
       </div>
 
       {d.site?.fit && (() => { const f = d.site!.fit!; const rows = strings.map((i) => [i, f.strings?.[String(i)]] as const).filter(([, v]) => v && v.status !== "unused");
