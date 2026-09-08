@@ -34,6 +34,7 @@ const L = {
         model: "Model", panels: "Panels", tilt: "tilt", noStrings: "no panels configured",
         fit: "Estimated orientation", fitFrom: "from measurements", fitOk: "good", fitUncertain: "uncertain", fitInsufficient: "not determinable yet", fitUnused: "no panel", fitHours: "sunny hours",
         fitHint: "Estimated once a day by the GroLo stack from the hourly curves of the last 30 days against the irradiance model; apply it on the settings page.", fitNone: "no estimate yet", legendFit: "hollow diamond = estimated orientation",
+        avgDay: "Ø daylight", energyDay: "energy", avg30: "Ø 30 days", allStrings: "All strings", perDay: "per day",
         assumedLabel: "assumed", expectedAssumed: "Expected curve uses an assumed orientation", fromFit: "from the estimate", fromSiteBest: "site optimum", untilConfigured: "until you enter the panels on the settings page",
         advice: "Recommendations from the data", adviceBasisConfig: "configured", adviceBasisFit: "estimated", advYear: "kWh per kWp and year", advOfBest: "of the site optimum", advOptimum: "Site optimum",
         advSameAz: "Same direction, tilt", advVertical: "Vertical (balcony) facing", advFlat: "Flat", advWinter: "winter share", advLever: "Biggest lever", advFine: "Orientation is close to the optimum, nothing to gain by moving the panels.",
@@ -48,6 +49,7 @@ const L = {
         model: "Modell", panels: "Module", tilt: "Neigung", noStrings: "keine Module konfiguriert",
         fit: "Geschätzte Ausrichtung", fitFrom: "aus Messdaten", fitOk: "gut", fitUncertain: "unsicher", fitInsufficient: "noch nicht bestimmbar", fitUnused: "kein Modul", fitHours: "Sonnenstunden",
         fitHint: "Der GroLo-Stack schätzt täglich aus den Stundenkurven der letzten 30 Tage gegen das Einstrahlungsmodell; übernehmen auf der Einstellungsseite.", fitNone: "noch keine Schätzung", legendFit: "hohle Raute = geschätzte Ausrichtung",
+        avgDay: "Ø bei Tageslicht", energyDay: "Energie", avg30: "Ø 30 Tage", allStrings: "Alle Strings", perDay: "pro Tag",
         assumedLabel: "angenommen", expectedAssumed: "Erwartungskurve mit angenommener Ausrichtung", fromFit: "aus der Schätzung", fromSiteBest: "Standortoptimum", untilConfigured: "bis du die Module auf der Einstellungsseite einträgst",
         advice: "Empfehlungen aus den Daten", adviceBasisConfig: "konfiguriert", adviceBasisFit: "geschätzt", advYear: "kWh je kWp und Jahr", advOfBest: "des Standortoptimums", advOptimum: "Optimum am Standort",
         advSameAz: "Gleiche Richtung, Neigung", advVertical: "Senkrecht (Balkon) nach", advFlat: "Flach", advWinter: "Winteranteil", advLever: "Größter Hebel", advFine: "Die Ausrichtung liegt nahe am Optimum, Umbauen bringt nichts.",
@@ -122,6 +124,20 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
     return d.string_peaks.map((p) => { const ms = new Date(p.t).getTime(); const s = sunPosition(ms, lat, lon); return { ...p, ms, ...s, ...polar(s.azimuth, s.elevation, cx, cy, R) }; }).filter((p) => p.elevation > 0);
   }, [d.string_peaks, lat, lon]);
   const peaksToday = strings.map((i) => d.string_peaks.find((p) => p.string === i && p.day === d.day.key));
+
+  // ---- Tagesmittel bei Tageslicht und Tagesenergie je String (gewählter Tag) sowie 30-Tage-Mittel der Tagesenergie
+  const dayStats = useMemo(() => {
+    const light = d.strings_day.filter((r) => { const ms = new Date(r.t).getTime() + 150000; return lat != null && lon != null ? sunPosition(ms, lat, lon).elevation > 0 : (r.pv ?? 0) > 1; });
+    const stat = (key: "s1" | "s2" | "s3" | "s4" | "pv") => {
+      const vals = light.map((r) => r[key] ?? 0); const avg = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+      const wh = d.strings_day.reduce((a, r) => a + (r[key] ?? 0) / 12, 0);
+      const byDay = new Map<string, number>(); for (const h of d.heat) byDay.set(h.day, (byDay.get(h.day) ?? 0) + (h[key] ?? 0));
+      const days = [...byDay.entries()].filter(([day]) => day !== d.day.today); const wh30 = days.length ? days.reduce((a, [, v]) => a + v, 0) / days.length : null;
+      return { avg, wh, wh30, n: days.length };
+    };
+    return { s: Object.fromEntries(strings.map((i) => [i, stat(`s${i}` as "s1")])) as Record<number, ReturnType<typeof stat>>, total: stat("pv") };
+  }, [d, strings, lat, lon]);
+  const fmtWh = (wh: number | null) => wh == null ? "–" : wh < 1000 ? `${wh.toFixed(0)} Wh` : `${(wh / 1000).toFixed(2)} kWh`;
   const dirs = lang === "de" ? ["N", "O", "S", "W"] : ["N", "E", "S", "W"];
 
   // ---- Tagesdiagramm gemessen vs. erwartet
@@ -164,6 +180,13 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
             <div className="v" style={{ color: STRING_COLORS[i - 1] }}>{p ? fmtW(p.w) : "–"}</div>
             <div className="s">{p ? `${t.at} ${fmtTime(new Date(p.t).getTime())}${lat != null && lon != null ? ` · ${t.sunNow} ${compass(sunPosition(new Date(p.t).getTime(), lat, lon).azimuth, lang)} ${sunPosition(new Date(p.t).getTime(), lat, lon).elevation.toFixed(0)}°` : ""}` : t.noPeak}
               {c?.tilt != null && c?.azimuth != null ? ` · ${t.panels}: ${compass(Number(c.azimuth), lang)} ${Number(c.azimuth).toFixed(0)}° / ${t.tilt} ${Number(c.tilt).toFixed(0)}°${c.wp ? ` / ${Number(c.wp).toFixed(0)} Wp` : ""}` : ""}</div></div>); })}
+        {strings.map((i) => { const st = dayStats.s[i]; return (
+          <div className="tile" key={`avg${i}`}><div className="k">{t.string} {i} · {t.avgDay} {isToday ? t.today : fmtDate(d.day.start)}</div>
+            <div className="v" style={{ color: STRING_COLORS[i - 1] }}>{st?.avg != null ? fmtW(st.avg) : "–"}</div>
+            <div className="s">{t.energyDay} {fmtWh(st?.wh ?? null)}{st?.wh30 != null ? ` · ${t.avg30} ${fmtWh(st.wh30)} ${t.perDay}` : ""}</div></div>); })}
+        {strings.length > 1 && <div className="tile"><div className="k">{t.allStrings} · {t.avgDay} {isToday ? t.today : fmtDate(d.day.start)}</div>
+          <div className="v" style={{ color: "var(--pv)" }}>{dayStats.total.avg != null ? fmtW(dayStats.total.avg) : "–"}</div>
+          <div className="s">{t.energyDay} {fmtWh(dayStats.total.wh)}{dayStats.total.wh30 != null ? ` · ${t.avg30} ${fmtWh(dayStats.total.wh30)} ${t.perDay}` : ""}</div></div>}
       </div>
 
       {d.site?.fit && (() => { const f = d.site!.fit!; const rows = strings.map((i) => [i, f.strings?.[String(i)]] as const).filter(([, v]) => v && v.status !== "unused");
