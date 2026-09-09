@@ -10,6 +10,7 @@ type WeatherCurrent = { temperature?: number | null; cloud_cover?: number | null
 type WeatherForecast = { t: string; shortwave_radiation?: number | null; cloud_cover?: number | null; temperature?: number | null; weather_code?: number | null };
 type Site = { name?: string | null; lat?: number | null; lon?: number | null; strings?: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }>; assumed?: Record<string, unknown> };
 type ModelRow = { t: string; string: number; gti?: number | null; expected_w?: number | null };
+type ShellyState = { grid_w?: number|null; household_w?: number|null; out_w?: number|null; target_w?: number|null; setpoint_w?: number|null; ok?: boolean|null; enabled?: boolean|null; host?: string|null };
 type Weather = { ts?: string; current?: WeatherCurrent & { sun_azimuth?: number | null; sun_elevation?: number | null }; forecast?: WeatherForecast[]; site?: Site; model?: ModelRow[]; fit?: Record<string, unknown> | null; advice?: Record<string, unknown> | null };
 
 type Sample = {
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
   if (!process.env.INGEST_TOKEN || auth !== `Bearer ${process.env.INGEST_TOKEN}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  let body: { samples?: Sample[]; info?: Record<string, unknown> & { device?: string }; weather?: Weather };
+  let body: { samples?: Sample[]; info?: Record<string, unknown> & { device?: string }; weather?: Weather; shelly?: ShellyState };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "bad json" }, { status: 400 }); }
   await ensureSchema();
   const samples = (body.samples || []).slice(0, 500);
@@ -92,6 +93,13 @@ export async function POST(req: NextRequest) {
         ON CONFLICT (t) DO UPDATE SET shortwave_radiation = EXCLUDED.shortwave_radiation, cloud_cover = EXCLUDED.cloud_cover, temperature = EXCLUDED.temperature, weather_code = EXCLUDED.weather_code`;
       weather++;
     }
+  }
+  const sh = body.shelly;
+  if (sh && typeof sh === "object") {
+    await sql`INSERT INTO shelly (id, updated, grid_w, household_w, out_w, target_w, setpoint_w, ok, enabled, host)
+      VALUES (1, now(), ${sh.grid_w ?? null}, ${sh.household_w ?? null}, ${sh.out_w ?? null}, ${sh.target_w ?? null}, ${sh.setpoint_w ?? null}, ${sh.ok ?? null}, ${sh.enabled ?? null}, ${sh.host ?? null})
+      ON CONFLICT (id) DO UPDATE SET updated = now(), grid_w = EXCLUDED.grid_w, household_w = EXCLUDED.household_w, out_w = EXCLUDED.out_w,
+        target_w = EXCLUDED.target_w, setpoint_w = EXCLUDED.setpoint_w, ok = EXCLUDED.ok, enabled = EXCLUDED.enabled, host = EXCLUDED.host`;
   }
   return NextResponse.json({ ok: true, inserted: n, weather });
 }

@@ -11,6 +11,7 @@ type Data = Partial<SunData> & {
   daily: { day: string; pv_kwh: number; out_kwh: number; charge_kwh: number; discharge_kwh: number }[];
   today: { pv_kwh: number; out_kwh: number; charge_kwh: number; discharge_kwh: number } | null;
   totals: { pv_kwh: number; out_kwh: number; since: string } | null;
+  shelly?: { updated: string; grid_w: number|null; household_w: number|null; out_w: number|null; target_w: number|null; setpoint_w: number|null; ok: boolean|null; enabled: boolean|null; host: string|null } | null;
   weather?: {
     current: { ts?: string; temperature?: number | null; cloud_cover?: number | null; shortwave_radiation?: number | null; wind_speed?: number | null; condition_en?: string | null; condition_de?: string | null;
                sunrise?: string | null; sunset?: string | null; sunshine_duration_today?: number | null; radiation_sum_today?: number | null } | null;
@@ -27,6 +28,7 @@ const T = {
         direct: "Directly to house", intoBat: "Into the battery", fromPv: "Directly from PV", fromBat: "From the battery",
         hardware: "Hardware", pack: "Pack", temp: "Temperature", dongle: "Wi-Fi dongle", wifi: "Wi-Fi signal", string: "String", free: "free",
         modes: { "Load First": "Load first", "Battery First": "Battery first", "Smart Mode": "Smart" } as Record<string, string>,
+        grid: "Grid", household: "Household", smartCtl: "Smart control", gridIn: "draw", gridOut: "feed-in",
         weather: "Weather", wtemp: "Temperature", wcond: "Conditions", wcloud: "Cloud cover", wrad: "Global radiation", wsun: "Sunrise – sunset", wsunshine: "Sunshine today", wradsum: "Radiation today",
         wnone: "no weather data yet", wchart: "Global radiation vs. PV power", wforecast: "Forecast 48 h", wradiation: "Radiation", apierr: "Data API is not responding",
         footer: "Read-only mirror of a local GroLo installation. Data every 30 s, no control from here.", range: { "24h": "24 h", "7d": "7 days", "30d": "30 days" } as Record<string, string> },
@@ -37,6 +39,7 @@ const T = {
         direct: "Direkt ins Haus", intoBat: "In die Batterie", fromPv: "Direkt aus PV", fromBat: "Aus der Batterie",
         hardware: "Hardware", pack: "Pack", temp: "Temperatur", dongle: "WLAN-Dongle", wifi: "WLAN-Signal", string: "String", free: "frei",
         modes: { "Load First": "Last zuerst", "Battery First": "Batterie zuerst", "Smart Mode": "Smart" } as Record<string, string>,
+        grid: "Netz", household: "Haushalt", smartCtl: "Smart-Regelung", gridIn: "Bezug", gridOut: "Einspeisung",
         weather: "Wetter", wtemp: "Temperatur", wcond: "Wetterlage", wcloud: "Bewölkung", wrad: "Globalstrahlung", wsun: "Sonnenaufgang – Sonnenuntergang", wsunshine: "Sonnenschein heute", wradsum: "Strahlung heute",
         wnone: "noch keine Wetterdaten", wchart: "Globalstrahlung und PV-Leistung", wforecast: "Vorhersage 48 h", wradiation: "Strahlung", apierr: "Daten-API antwortet nicht",
         footer: "Nur-Lese-Spiegel einer lokalen GroLo-Installation. Daten alle 30 s, keine Steuerung von hier.", range: { "24h": "24 h", "7d": "7 Tage", "30d": "30 Tage" } as Record<string, string> },
@@ -100,6 +103,8 @@ export default function Page() {
             <Tile k={t.soc} v={l ? `${Math.round(l.soc)}` : "–"} unit="%" color="var(--soc)" s={l?.packs ? `${t.packs}: ${l.packs}` : undefined} />
             <Tile k={t.mode} v={l?.mode ? (t.modes[l.mode] || l.mode) : "–"} />
             <Tile k={t.tsys} v={l?.temp_sys != null ? l.temp_sys.toFixed(1) : "–"} unit="°C" />
+            {data?.shelly && (data.shelly.grid_w != null || data.shelly.enabled) && <Tile k={t.grid} v={fmtW(data.shelly.grid_w)} color={data.shelly.grid_w != null && data.shelly.grid_w < 0 ? "var(--bat)" : "var(--red)"} s={data.shelly.grid_w != null ? (data.shelly.grid_w < 0 ? t.gridOut : t.gridIn) : undefined} />}
+            {data?.shelly && data.shelly.household_w != null && <Tile k={t.household} v={fmtW(data.shelly.household_w)} color="var(--house)" s={data.shelly.enabled ? `${t.smartCtl}${data.shelly.ok === false ? " ⚠" : data.shelly.setpoint_w != null ? ` · ${Math.round(data.shelly.setpoint_w)} W` : ""}` : undefined} />}
           </div>
         </section>
         <section>

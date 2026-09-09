@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
     WITH mins AS (SELECT date_trunc('minute', ts) AS bucket_ts, avg(pv_w) AS pv, avg(out_w) AS outw FROM samples GROUP BY 1)
     SELECT sum(pv) / 60000.0 AS pv_kwh, sum(outw) / 60000.0 AS out_kwh, min(bucket_ts) AS since FROM mins`;
 
+  const shelly = await sql`SELECT updated, grid_w, household_w, out_w, target_w, setpoint_w, ok, enabled, host FROM shelly WHERE id = 1`;
   const wcur = await sql`SELECT * FROM weather_current WHERE id = 1`;
   const wfc = await sql`SELECT t, shortwave_radiation, cloud_cover, temperature, weather_code FROM weather_forecast
     WHERE t >= date_trunc('hour', now()) AND t < now() + interval '48 hours' ORDER BY t`;
@@ -118,6 +119,7 @@ export async function GET(req: NextRequest) {
     heat: heat.map((r) => ({ day: String(r.day), hour: Number(r.hour), s1: num(r.s1), s2: num(r.s2), s3: num(r.s3), s4: num(r.s4), pv: num(r.pv) })),
     alltime: { since: a?.since ?? null, days: a ? Number(a.days) : 0, minutes: a ? Number(a.minutes) : 0, total: allOf(0), strings: Object.fromEntries([1, 2, 3, 4].map((i) => [String(i), allOf(i)])) },
     model_day: modelDay.map((r) => ({ t: r.t, string: Number(r.string), gti: num(r.gti), expected_w: num(r.expected_w) })),
+    shelly: shelly[0] ? { updated: shelly[0].updated, grid_w: num(shelly[0].grid_w), household_w: num(shelly[0].household_w), out_w: num(shelly[0].out_w), target_w: num(shelly[0].target_w), setpoint_w: num(shelly[0].setpoint_w), ok: shelly[0].ok, enabled: shelly[0].enabled, host: shelly[0].host } : null,
     weather: {
       current: wcur[0] ? { ...wcur[0], id: undefined } : null,
       forecast: wfc.map((f) => ({ t: f.t, shortwave_radiation: num(f.shortwave_radiation), cloud_cover: num(f.cloud_cover), temperature: num(f.temperature), weather_code: f.weather_code })),
