@@ -28,7 +28,7 @@ const T = {
         direct: "Directly to house", intoBat: "Into the battery", fromPv: "Directly from PV", fromBat: "From the battery",
         hardware: "Hardware", pack: "Pack", temp: "Temperature", dongle: "Wi-Fi dongle", wifi: "Wi-Fi signal", string: "String", free: "free",
         modes: { "Load First": "Load first", "Battery First": "Battery first", "Smart Mode": "Smart" } as Record<string, string>,
-        grid: "Grid", household: "Household", smartCtl: "Smart control", gridIn: "draw", gridOut: "feed-in",
+        grid: "Grid", household: "Household", smartCtl: "Smart control", gridIn: "draw", gridOut: "feed-in", shOut: "Output", shTarget: "Target", shSetpoint: "setpoint", shUnreach: "Shelly unreachable", on: "on", off: "off",
         weather: "Weather", wtemp: "Temperature", wcond: "Conditions", wcloud: "Cloud cover", wrad: "Global radiation", wsun: "Sunrise – sunset", wsunshine: "Sunshine today", wradsum: "Radiation today",
         wnone: "no weather data yet", wchart: "Global radiation vs. PV power", wforecast: "Forecast 48 h", wradiation: "Radiation", apierr: "Data API is not responding",
         footer: "Read-only mirror of a local GroLo installation. Data every 30 s, no control from here.", range: { "24h": "24 h", "7d": "7 days", "30d": "30 days" } as Record<string, string> },
@@ -39,7 +39,7 @@ const T = {
         direct: "Direkt ins Haus", intoBat: "In die Batterie", fromPv: "Direkt aus PV", fromBat: "Aus der Batterie",
         hardware: "Hardware", pack: "Pack", temp: "Temperatur", dongle: "WLAN-Dongle", wifi: "WLAN-Signal", string: "String", free: "frei",
         modes: { "Load First": "Last zuerst", "Battery First": "Batterie zuerst", "Smart Mode": "Smart" } as Record<string, string>,
-        grid: "Netz", household: "Haushalt", smartCtl: "Smart-Regelung", gridIn: "Bezug", gridOut: "Einspeisung",
+        grid: "Netz", household: "Haushalt", smartCtl: "Smart-Regelung", gridIn: "Bezug", gridOut: "Einspeisung", shOut: "Ausgabe", shTarget: "Ziel", shSetpoint: "Sollwert", shUnreach: "Shelly nicht erreichbar", on: "an", off: "aus",
         weather: "Wetter", wtemp: "Temperatur", wcond: "Wetterlage", wcloud: "Bewölkung", wrad: "Globalstrahlung", wsun: "Sonnenaufgang – Sonnenuntergang", wsunshine: "Sonnenschein heute", wradsum: "Strahlung heute",
         wnone: "noch keine Wetterdaten", wchart: "Globalstrahlung und PV-Leistung", wforecast: "Vorhersage 48 h", wradiation: "Strahlung", apierr: "Daten-API antwortet nicht",
         footer: "Nur-Lese-Spiegel einer lokalen GroLo-Installation. Daten alle 30 s, keine Steuerung von hier.", range: { "24h": "24 h", "7d": "7 Tage", "30d": "30 Tage" } as Record<string, string> },
@@ -103,10 +103,17 @@ export default function Page() {
             <Tile k={t.soc} v={l ? `${Math.round(l.soc)}` : "–"} unit="%" color="var(--soc)" s={l?.packs ? `${t.packs}: ${l.packs}` : undefined} />
             <Tile k={t.mode} v={l?.mode ? (t.modes[l.mode] || l.mode) : "–"} />
             <Tile k={t.tsys} v={l?.temp_sys != null ? l.temp_sys.toFixed(1) : "–"} unit="°C" />
-            {data?.shelly && (data.shelly.grid_w != null || data.shelly.enabled) && <Tile k={t.grid} v={fmtW(data.shelly.grid_w)} color={data.shelly.grid_w != null && data.shelly.grid_w < 0 ? "var(--bat)" : "var(--red)"} s={data.shelly.grid_w != null ? (data.shelly.grid_w < 0 ? t.gridOut : t.gridIn) : undefined} />}
-            {data?.shelly && data.shelly.household_w != null && <Tile k={t.household} v={fmtW(data.shelly.household_w)} color="var(--house)" s={data.shelly.enabled ? `${t.smartCtl}${data.shelly.ok === false ? " ⚠" : data.shelly.setpoint_w != null ? ` · ${Math.round(data.shelly.setpoint_w)} W` : ""}` : undefined} />}
           </div>
         </section>
+        {data?.shelly && (data.shelly.enabled || data.shelly.grid_w != null) && (() => { const sh = data.shelly!; const bad = sh.ok === false; return (
+          <section><h2>{t.smartCtl} <small style={{ fontSize: 13, fontWeight: 500, color: sh.enabled ? (bad ? "var(--red)" : "var(--bat)") : "var(--muted)" }}>{sh.enabled ? (bad ? `⚠ ${t.shUnreach}` : `${t.on}${sh.setpoint_w != null ? ` · ${t.shSetpoint} ${Math.round(sh.setpoint_w)} W` : ""}`) : t.off}</small></h2>
+          <div className="tiles">
+            <Tile k={t.grid} v={fmtW(sh.grid_w)} color={sh.grid_w != null && sh.grid_w < 0 ? "var(--bat)" : "var(--red)"} s={sh.grid_w != null ? (sh.grid_w < 0 ? t.gridOut : t.gridIn) : undefined} />
+            <Tile k={t.household} v={fmtW(sh.household_w)} color="var(--house)" />
+            <Tile k={t.shOut} v={fmtW(sh.out_w)} color="var(--pv)" />
+            <Tile k={t.shTarget} v={fmtW(sh.target_w)} />
+          </div>
+        </section>); })()}
         <section>
           <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}><h2 style={{ margin: 0 }}>{t.history}</h2><span className="spacer" />
             <div className="toggle">{(["24h", "7d", "30d"] as const).map(r => <button key={r} className={range === r ? "on" : ""} onClick={() => setRange(r)}>{t.range[r]}</button>)}</div></div>
