@@ -37,12 +37,13 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
         : <path className="fe idle" d={d} stroke={color} />}
     </g>);
   };
-  const Node = ({ x, y, r = 30, color, label, value, sub, children }: { x: number; y: number; r?: number; color: string; label: string; value: string; sub?: string; children?: React.ReactNode }) => (
+  const Node = ({ x, y, r = 30, color, label, value, sub, right, children }: { x: number; y: number; r?: number; color: string; label: string; value: string; sub?: string; right?: boolean; children?: React.ReactNode }) => (
     <g transform={`translate(${x} ${y})`}>
       <circle r={r} fill={C.panel} stroke={color} strokeWidth="2.5" />
       <g stroke={color} fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{children}</g>
       <text className="nl" y={-r - 10} textAnchor="middle">{label}</text>
-      <text className="nv" y={r + 20} textAnchor="middle" fill={color}>{value}</text>
+      {right ? <text className="nv" x={r + 8} y={5} textAnchor="start" fill={color}>{value}</text>
+             : <text className="nv" y={r + 20} textAnchor="middle" fill={color}>{value}</text>}
       {sub && <text className="ns" y={r + 34} textAnchor="middle">{sub}</text>}
     </g>
   );
@@ -51,27 +52,27 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
     <svg className="flow" viewBox="0 0 420 320" role="img" aria-label="power flow">
       {/* Kanten unter den Knoten: Solar → NEXA, NEXA → Haus, Netz ↔ Haus */}
       <Edge d="M70 92 L70 208" w={pv} color={C.pv} />
-      <Edge d="M134 232 C 158 232, 168 205, 178 190" w={out} color={C.house} />
+      <Edge d="M145 228 C 165 228, 170 200, 177 190" w={out} color={C.house} />
       {hasGrid
-        ? <Edge d="M248 170 L318 170" w={grid} color={gridDraw ? C.grid : C.bat} rev={!gridDraw} />
+        ? <Edge d="M318 170 L248 170" w={grid} color={gridDraw ? C.grid : C.bat} rev={!gridDraw} />
         : <path className="base" d="M248 170 L318 170" opacity="0.3" />}
-      <text className="ns" x="150" y="256" textAnchor="middle" fill={C.house}>→ {fmtW(out)}</text>
-      {hasGrid && <text className="ns" x="283" y="188" textAnchor="middle" fill={gridDraw ? C.grid : C.bat}>{gridDraw ? "→" : "←"} {fmtW(Math.abs(grid ?? 0))}</text>}
+      <text className="ns" x="168" y="252" textAnchor="middle" fill={C.house}>↗ {fmtW(out)}</text>
+      {hasGrid && <text className="ns" x="283" y="188" textAnchor="middle" fill={gridDraw ? C.grid : C.bat}>{gridDraw ? "←" : "→"} {fmtW(Math.abs(grid ?? 0))}</text>}
 
       {/* Solar (oben links) */}
-      <Node x={70} y={62} color={C.pv} label={labels.solar} value={fmtW(pv)}>
+      <Node x={70} y={62} color={C.pv} label={labels.solar} value={fmtW(pv)} right>
         <circle r="7" /><path d="M0 -13 V-17 M0 13 V17 M-13 0 H-17 M13 0 H17 M-9 -9 L-12 -12 M9 9 L12 12 M9 -9 L12 -12 M-9 9 L-12 12" />
       </Node>
 
       {/* NEXA mit Batterie (unten links) */}
       <g transform="translate(70 250)">
-        <rect x="-64" y="-40" width="128" height="80" rx="12" fill={C.panel} stroke={limited ? C.house : C.bat} strokeWidth="2.5" />
+        <rect x="-75" y="-40" width="150" height="80" rx="12" fill={C.panel} stroke={limited ? C.house : C.bat} strokeWidth="2.5" />
         <text className="nl" y="-24" textAnchor="middle">{labels.nexa}{packs ? ` · ${packs} × ${labels.battery}` : ""}</text>
-        <rect x="-50" y="-12" width="70" height="28" rx="4" fill="none" stroke={C.muted} strokeWidth="2" />
-        <rect x="21" y="-3" width="5" height="10" rx="1" fill={C.muted} />
-        <rect x="-47" y="-9" width={Math.max(0, 64 * socPct / 100)} height="22" rx="2" fill={socColor} opacity="0.85" />
-        {socLimit != null && <line x1={-47 + 64 * Math.min(100, socLimit) / 100} x2={-47 + 64 * Math.min(100, socLimit) / 100} y1="-12" y2="16" stroke={C.red} strokeWidth="1.5" strokeDasharray="2 2" />}
-        <text className="nv" x="46" y="7" textAnchor="middle" fill={socColor}>{soc == null ? "–" : `${Math.round(soc)} %`}</text>
+        <rect x="-62" y="-12" width="60" height="28" rx="4" fill="none" stroke={C.muted} strokeWidth="2" />
+        <rect x="-1" y="-3" width="5" height="10" rx="1" fill={C.muted} />
+        <rect x="-59" y="-9" width={Math.max(0, 54 * socPct / 100)} height="22" rx="2" fill={socColor} opacity="0.85" />
+        {socLimit != null && <line x1={-59 + 54 * Math.min(100, socLimit) / 100} x2={-59 + 54 * Math.min(100, socLimit) / 100} y1="-12" y2="16" stroke={C.red} strokeWidth="1.5" strokeDasharray="2 2" />}
+        <text className="nv" x="38" y="7" textAnchor="middle" fill={socColor}>{soc == null ? "–" : `${Math.round(soc)} %`}</text>
         <text className="ns" y="32" textAnchor="middle" fill={bat != null && Math.abs(bat) > 2 ? (bat > 0 ? C.bat : C.house) : C.muted}>
           {bat == null ? "" : `${bat > 2 ? "▲ " : bat < -2 ? "▼ " : ""}${fmtW(Math.abs(bat))} ${batState}`}
         </text>
