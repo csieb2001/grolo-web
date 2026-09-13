@@ -2,16 +2,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { SunSection, type SunData } from "./sun";
+import { PowerFlow } from "./flow";
 
 type Data = Partial<SunData> & {
   updated: string | null; device: string | null;
   latest: { pv_w: number; out_w: number; bat_w: number; soc: number; soc1?: number; soc2?: number; soc3?: number; soc4?: number; temp_sys?: number; temp_bat1?: number; temp_bat2?: number; pv_v?: number[]; pv_a?: number[]; packs?: number; status?: string; mode?: string } | null;
   info: { model?: string; dongle_model?: string; dongle_sw?: string; dongle_hw?: string; wifi_dbm?: string; updated?: string } | null;
   series: { t: string; pv: number; out: number; bat: number; soc: number }[];
-  daily: { day: string; pv_kwh: number; out_kwh: number; charge_kwh: number; discharge_kwh: number }[];
-  today: { pv_kwh: number; out_kwh: number; charge_kwh: number; discharge_kwh: number } | null;
+  daily: { day: string; pv_kwh: number; out_kwh: number; charge_kwh: number; discharge_kwh: number; grid_kwh?: number | null; feedin_kwh?: number | null; house_kwh?: number | null }[];
+  today: { pv_kwh: number; out_kwh: number; charge_kwh: number; discharge_kwh: number; grid_kwh?: number | null; feedin_kwh?: number | null; house_kwh?: number | null } | null;
   totals: { pv_kwh: number; out_kwh: number; since: string } | null;
-  shelly?: { updated: string; grid_w: number|null; household_w: number|null; out_w: number|null; target_w: number|null; setpoint_w: number|null; ok: boolean|null; enabled: boolean|null; host: string|null } | null;
+  periods?: { month: Period; year: Period; total: Period & { days: number; since: string | null } } | null;
+  tariff?: { price_ct_kwh: number | null; feedin_ct_kwh: number; system_cost_eur: number; currency: string; updated: string } | null;
+  shelly?: { updated: string; grid_w: number|null; household_w: number|null; out_w: number|null; target_w: number|null; setpoint_w: number|null; ok: boolean|null; enabled: boolean|null; host: string|null;
+             limited?: boolean|null; reason?: string|null; soc?: number|null; soc_limit?: number|null } | null;
   weather?: {
     current: { ts?: string; temperature?: number | null; cloud_cover?: number | null; shortwave_radiation?: number | null; wind_speed?: number | null; condition_en?: string | null; condition_de?: string | null;
                sunrise?: string | null; sunset?: string | null; sunshine_duration_today?: number | null; radiation_sum_today?: number | null } | null;
@@ -19,6 +23,8 @@ type Data = Partial<SunData> & {
     history: { t: string; radiation: number | null; cloud: number | null; temp: number | null }[];
   } | null;
 };
+
+type Period = { out_kwh: number | null; grid_kwh: number | null; feedin_kwh: number | null };
 
 const T = {
   en: { title: "Growatt Local", live: "live", stale: "stale", nodata: "no data yet", updated: "updated", now: "Now", pv: "PV power", out: "Output to house", bat: "Battery", soc: "State of charge",
@@ -29,6 +35,11 @@ const T = {
         hardware: "Hardware", pack: "Pack", temp: "Temperature", dongle: "Wi-Fi dongle", wifi: "Wi-Fi signal", string: "String", free: "free",
         modes: { "Load First": "Load first", "Battery First": "Battery first", "Smart Mode": "Smart" } as Record<string, string>,
         grid: "Grid", household: "Household", smartCtl: "Smart control", gridIn: "draw", gridOut: "feed-in", shOut: "Output", shTarget: "Target", shSetpoint: "setpoint", shUnreach: "Shelly unreachable", on: "on", off: "off",
+        reasons: { battery_low: "battery at the discharge limit, NEXA delivers less than the target", device_limited: "NEXA delivers less than the target", device_offline: "NEXA offline" } as Record<string, string>,
+        costs: "Costs and savings", costsAt: "at {p} ct/kWh", costsSet: "set on the GroLo settings page", costsDefault: "default, not set yet", saved: "saved", month: "This month", year: "This year", gridCost: "grid cost", feedinRev: "feed-in revenue",
+        payback: "Payback", paybackText: "{pct} % of {cost} recovered · about {y} years to go at the current pace", paybackDone: "{cost} recovered, the system has paid for itself",
+        dailyCost: "Savings and grid cost per day", costsHint: "Savings = energy delivered to the house × price (grid power you did not have to buy). Grid cost = grid import measured by the Shelly × price, only while the zero feed-in control runs.",
+        flow: "Power flow", flowSolar: "Solar", flowBattery: "Battery", flowHome: "Home", flowGrid: "Grid", flowNexa: "NEXA", flowNoGrid: "grid only with a Shelly meter", flowSelf: "self-sufficiency", flowSocLimit: "discharge limit",
         weather: "Weather", wtemp: "Temperature", wcond: "Conditions", wcloud: "Cloud cover", wrad: "Global radiation", wsun: "Sunrise – sunset", wsunshine: "Sunshine today", wradsum: "Radiation today",
         wnone: "no weather data yet", wchart: "Global radiation vs. PV power", wforecast: "Forecast 48 h", wradiation: "Radiation", apierr: "Data API is not responding",
         footer: "Read-only mirror of a local GroLo installation. Data every 30 s, no control from here.", range: { "24h": "24 h", "7d": "7 days", "30d": "30 days" } as Record<string, string> },
@@ -40,12 +51,17 @@ const T = {
         hardware: "Hardware", pack: "Pack", temp: "Temperatur", dongle: "WLAN-Dongle", wifi: "WLAN-Signal", string: "String", free: "frei",
         modes: { "Load First": "Last zuerst", "Battery First": "Batterie zuerst", "Smart Mode": "Smart" } as Record<string, string>,
         grid: "Netz", household: "Haushalt", smartCtl: "Smart-Regelung", gridIn: "Bezug", gridOut: "Einspeisung", shOut: "Ausgabe", shTarget: "Ziel", shSetpoint: "Sollwert", shUnreach: "Shelly nicht erreichbar", on: "an", off: "aus",
+        reasons: { battery_low: "Batterie an der Entladegrenze, NEXA liefert weniger als das Ziel", device_limited: "NEXA liefert weniger als das Ziel", device_offline: "NEXA offline" } as Record<string, string>,
+        costs: "Kosten und Ersparnis", costsAt: "bei {p} ct/kWh", costsSet: "einstellbar auf der GroLo-Einstellungsseite", costsDefault: "Standard, noch nicht gesetzt", saved: "gespart", month: "Dieser Monat", year: "Dieses Jahr", gridCost: "Netzkosten", feedinRev: "Einspeisevergütung",
+        payback: "Amortisation", paybackText: "{pct} % von {cost} zurückverdient · bei diesem Tempo noch etwa {y} Jahre", paybackDone: "{cost} zurückverdient, die Anlage hat sich bezahlt gemacht",
+        dailyCost: "Ersparnis und Netzkosten pro Tag", costsHint: "Ersparnis = ins Haus abgegebene Energie × Preis (Netzstrom, den du nicht kaufen musstest). Netzkosten = Netzbezug laut Shelly × Preis, nur solange die Nulleinspeisung läuft.",
+        flow: "Energiefluss", flowSolar: "Solar", flowBattery: "Batterie", flowHome: "Haus", flowGrid: "Netz", flowNexa: "NEXA", flowNoGrid: "Netz nur mit Shelly-Zähler", flowSelf: "Eigenversorgung", flowSocLimit: "Entladegrenze",
         weather: "Wetter", wtemp: "Temperatur", wcond: "Wetterlage", wcloud: "Bewölkung", wrad: "Globalstrahlung", wsun: "Sonnenaufgang – Sonnenuntergang", wsunshine: "Sonnenschein heute", wradsum: "Strahlung heute",
         wnone: "noch keine Wetterdaten", wchart: "Globalstrahlung und PV-Leistung", wforecast: "Vorhersage 48 h", wradiation: "Strahlung", apierr: "Daten-API antwortet nicht",
         footer: "Nur-Lese-Spiegel einer lokalen GroLo-Installation. Daten alle 30 s, keine Steuerung von hier.", range: { "24h": "24 h", "7d": "7 Tage", "30d": "30 Tage" } as Record<string, string> },
 };
 
-const fmtW = (w: number | null | undefined) => w == null ? "–" : Math.abs(w) < 1 ? `${Math.round(w * 1000)} mW` : Math.abs(w) < 1000 ? `${w.toFixed(Math.abs(w) < 10 ? 1 : 0)} W` : `${(w / 1000).toFixed(2)} kW`;
+const fmtW = (w: number | null | undefined) => w == null ? "–" : Math.abs(w) < 0.5 ? "0 W" : Math.abs(w) < 1 ? `${Math.round(w * 1000)} mW` : Math.abs(w) < 1000 ? `${w.toFixed(Math.abs(w) < 10 ? 1 : 0)} W` : `${(w / 1000).toFixed(2)} kW`;
 const fmtKwh = (k: number | null | undefined) => k == null ? "–" : k < 1 ? `${(k * 1000).toFixed(0)} Wh` : `${k.toFixed(2)} kWh`;
 
 export default function Page() {
@@ -95,18 +111,24 @@ export default function Page() {
       </header>
       <main>
         {err && <section style={{ color: "var(--red)" }}>{err}</section>}
-        <section><h2>{t.now}</h2>
-          <div className="tiles">
-            <Tile k={t.pv} v={fmtW(l?.pv_w)} color="var(--pv)" s={pvIn != null ? `${t.pvin}: ${pvIn} / 4` : undefined} />
-            <Tile k={t.out} v={fmtW(l?.out_w)} color="var(--house)" />
-            <Tile k={t.bat} v={fmtW(l?.bat_w)} color="var(--bat)" s={l ? (l.bat_w > 2 ? t.charging : l.bat_w < -2 ? t.discharging : t.idle) : undefined} />
-            <Tile k={t.soc} v={l ? `${Math.round(l.soc)}` : "–"} unit="%" color="var(--soc)" s={l?.packs ? `${t.packs}: ${l.packs}` : undefined} />
-            <Tile k={t.mode} v={l?.mode ? (t.modes[l.mode] || l.mode) : "–"} />
-            <Tile k={t.tsys} v={l?.temp_sys != null ? l.temp_sys.toFixed(1) : "–"} unit="°C" />
+        {(() => { const sh = data?.shelly; const live = sh && sh.enabled && sh.ok && ageSec < 600 && sh.updated && (Date.now() - new Date(sh.updated).getTime()) < 600000; return (
+        <section><h2>{t.now} <small className="muted" style={{ fontSize: 12, fontWeight: 400 }}>· {t.flow}</small></h2>
+          <div className="nowwrap">
+            <PowerFlow pv={l?.pv_w ?? null} out={l?.out_w ?? null} bat={l?.bat_w ?? null} soc={l?.soc ?? null} packs={l?.packs ?? null}
+                       grid={live ? sh!.grid_w : null} house={live ? sh!.household_w : null} socLimit={sh?.soc_limit ?? null} limited={sh?.limited ?? null} siteName={data?.site?.name ?? null} fmtW={fmtW}
+                       labels={{ solar: t.flowSolar, battery: t.flowBattery, home: t.flowHome, grid: t.flowGrid, nexa: t.flowNexa, noGrid: t.flowNoGrid, self: t.flowSelf, charging: t.charging, discharging: t.discharging, idle: t.idle, socLimit: t.flowSocLimit }} />
+            <div className="tiles">
+              <Tile k={t.pv} v={fmtW(l?.pv_w)} color="var(--pv)" s={pvIn != null ? `${t.pvin}: ${pvIn} / 4` : undefined} />
+              <Tile k={t.out} v={fmtW(l?.out_w)} color="var(--house)" />
+              <Tile k={t.bat} v={fmtW(l?.bat_w)} color="var(--bat)" s={l ? (l.bat_w > 2 ? t.charging : l.bat_w < -2 ? t.discharging : t.idle) : undefined} />
+              <Tile k={t.soc} v={l ? `${Math.round(l.soc)}` : "–"} unit="%" color="var(--soc)" s={l?.packs ? `${t.packs}: ${l.packs}` : undefined} />
+              <Tile k={t.mode} v={l?.mode ? (t.modes[l.mode] || l.mode) : "–"} />
+              <Tile k={t.tsys} v={l?.temp_sys != null ? l.temp_sys.toFixed(1) : "–"} unit="°C" />
+            </div>
           </div>
-        </section>
-        {data?.shelly && (data.shelly.enabled || data.shelly.grid_w != null) && (() => { const sh = data.shelly!; const bad = sh.ok === false; return (
-          <section><h2>{t.smartCtl} <small style={{ fontSize: 13, fontWeight: 500, color: sh.enabled ? (bad ? "var(--red)" : "var(--bat)") : "var(--muted)" }}>{sh.enabled ? (bad ? `⚠ ${t.shUnreach}` : `${t.on}${sh.setpoint_w != null ? ` · ${t.shSetpoint} ${Math.round(sh.setpoint_w)} W` : ""}`) : t.off}</small></h2>
+        </section>); })()}
+        {data?.shelly && (data.shelly.enabled || data.shelly.grid_w != null) && (() => { const sh = data.shelly!; const bad = sh.ok === false; const reason = sh.reason && sh.reason !== "ok" && sh.reason !== "disabled" ? (t.reasons[sh.reason] || sh.reason) : null; return (
+          <section><h2>{t.smartCtl} <small style={{ fontSize: 13, fontWeight: 500, color: sh.enabled ? (bad ? "var(--red)" : reason ? "var(--house)" : "var(--bat)") : "var(--muted)" }}>{sh.enabled ? (bad ? `⚠ ${t.shUnreach}` : `${t.on}${sh.setpoint_w != null ? ` · ${t.shSetpoint} ${Math.round(sh.setpoint_w)} W` : ""}${reason ? ` · ⚠ ${reason}` : ""}`) : t.off}</small></h2>
           <div className="tiles">
             <Tile k={t.grid} v={fmtW(sh.grid_w)} color={sh.grid_w != null && sh.grid_w < 0 ? "var(--bat)" : "var(--red)"} s={sh.grid_w != null ? (sh.grid_w < 0 ? t.gridOut : t.gridIn) : undefined} />
             <Tile k={t.household} v={fmtW(sh.household_w)} color="var(--house)" />
@@ -142,6 +164,39 @@ export default function Page() {
             </div>
           </div>
         </section>
+        {(() => {
+          // Kosten und Ersparnis: Strompreis von der Einstellungsseite des Stacks (Fallback 30 ct/kWh), Energie aus den Tages- und Zeitraumsummen
+          const price = (data?.tariff?.price_ct_kwh ?? 30) / 100, feed = (data?.tariff?.feedin_ct_kwh ?? 0) / 100, cost = data?.tariff?.system_cost_eur ?? 0;
+          const eur = (v: number | null | undefined) => v == null ? "–" : new Intl.NumberFormat(locale, { style: "currency", currency: "EUR" }).format(v);
+          const saved = (o?: number | null, f?: number | null) => o == null ? null : o * price + (f ?? 0) * feed;
+          const gridCost = (g?: number | null) => g == null ? null : g * price;
+          const p = data?.periods; const td = data?.today;
+          const total = saved(p?.total.out_kwh, p?.total.feedin_kwh);
+          const perDay = p && p.total.days > 0 && total != null ? total / p.total.days : null;
+          const pct = cost > 0 && total != null ? Math.min(100, total / cost * 100) : null;
+          const yearsLeft = cost > 0 && perDay && total != null && total < cost ? (cost - total) / perDay / 365 : null;
+          const hasGrid = p?.total.grid_kwh != null;
+          const dailyEur = daily.map(d => ({ label: d.label, saved: saved(d.out_kwh, d.feedin_kwh) ?? 0, grid: gridCost(d.grid_kwh) }));
+          const fmtCt = (v: number) => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(v);
+          return (
+          <section><h2>{t.costs} <small className="muted" style={{ fontSize: 12, fontWeight: 400 }}>· {t.costsAt.replace("{p}", fmtCt(price * 100))} · {data?.tariff ? t.costsSet : t.costsDefault}</small></h2>
+            <div className="tiles" style={{ marginBottom: 14 }}>
+              <Tile k={`${t.today}: ${t.saved}`} v={eur(saved(td?.out_kwh, td?.feedin_kwh))} color="var(--bat)" s={fmtKwh(td?.out_kwh)} />
+              <Tile k={`${t.month}: ${t.saved}`} v={eur(saved(p?.month.out_kwh, p?.month.feedin_kwh))} color="var(--bat)" s={fmtKwh(p?.month.out_kwh)} />
+              <Tile k={`${t.year}: ${t.saved}`} v={eur(saved(p?.year.out_kwh, p?.year.feedin_kwh))} color="var(--bat)" s={fmtKwh(p?.year.out_kwh)} />
+              <Tile k={`${t.total} ${p?.total.since ? new Date(p.total.since).toLocaleDateString(locale) : "–"}: ${t.saved}`} v={eur(total)} color="var(--bat)" s={perDay != null ? `Ø ${eur(perDay)} / ${lang === "de" ? "Tag" : "day"}` : undefined} />
+              {hasGrid && <Tile k={`${t.today}: ${t.gridCost}`} v={eur(gridCost(td?.grid_kwh))} color="var(--red)" s={fmtKwh(td?.grid_kwh)} />}
+              {hasGrid && <Tile k={`${t.month}: ${t.gridCost}`} v={eur(gridCost(p?.month.grid_kwh))} color="var(--red)" s={fmtKwh(p?.month.grid_kwh)} />}
+              {feed > 0 && <Tile k={`${t.month}: ${t.feedinRev}`} v={eur((p?.month.feedin_kwh ?? 0) * feed)} color="var(--soc)" s={fmtKwh(p?.month.feedin_kwh)} />}
+            </div>
+            {pct != null && <div className="payback"><div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}><span>{t.payback}</span><span className="muted">{pct >= 100 ? t.paybackDone.replace("{cost}", eur(cost)) : t.paybackText.replace("{pct}", pct.toFixed(1)).replace("{cost}", eur(cost)).replace("{y}", yearsLeft != null ? yearsLeft.toFixed(1) : "–")}</span></div>
+              <div className="bar"><div style={{ width: `${pct}%` }} /></div></div>}
+            <div className="charts">
+              <div className="chart"><div className="muted" style={{ fontSize: 12 }}>{t.dailyCost}</div><ResponsiveContainer height={250}><BarChart data={dailyEur}><CartesianGrid stroke="#2c3235" /><XAxis dataKey="label" stroke="#8e8e8e" fontSize={11} /><YAxis stroke="#8e8e8e" fontSize={11} tickFormatter={(v) => eur(Number(v))} width={70} /><Tooltip {...tip} formatter={(v) => eur(Number(v))} /><Legend />
+                <Bar dataKey="saved" name={t.saved} fill="#73bf69" />{hasGrid && <Bar dataKey="grid" name={t.gridCost} fill="#f2495c" />}</BarChart></ResponsiveContainer></div>
+              <div className="muted" style={{ fontSize: 12.5, alignSelf: "center" }}>{t.costsHint}</div>
+            </div>
+          </section>); })()}
         {data?.day && <SunSection lang={lang} setDay={setDay} fmtDate={(iso) => new Date(iso).toLocaleDateString(locale, { day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" })}
           d={{ site: data.site ?? null, day: data.day, string_peaks: data.string_peaks ?? [], strings_day: data.strings_day ?? [], heat: data.heat ?? [], model_day: data.model_day ?? [], alltime: data.alltime ?? null }} />}
         <section><h2>{t.weather}</h2>

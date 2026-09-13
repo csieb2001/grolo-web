@@ -30,21 +30,33 @@ export async function GET(req: NextRequest) {
     WHERE ts > now() - make_interval(secs => ${range.seconds})
     GROUP BY 1 ORDER BY 1`;
 
-  // Tagesenergie in kWh aus Minutenmitteln: Summe(W) / 60 = Wh, / 1000 = kWh
+  // Tagesenergie in kWh aus Minutenmitteln: Summe(W) / 60 = Wh, / 1000 = kWh. Netz/Haus (Shelly) nur, wenn die Regelung lief.
   const daily = await sql`
     WITH mins AS (
-      SELECT date_trunc('minute', ts AT TIME ZONE ${TZ}) AS bucket_ts, avg(pv_w) AS pv, avg(out_w) AS outw, avg(bat_w) AS bat
+      SELECT date_trunc('minute', ts AT TIME ZONE ${TZ}) AS bucket_ts, avg(pv_w) AS pv, avg(out_w) AS outw, avg(bat_w) AS bat, avg(grid_w) AS grid, avg(house_w) AS house
       FROM samples WHERE ts > now() - interval '31 days' GROUP BY 1)
     SELECT to_char(bucket_ts::date, 'YYYY-MM-DD') AS day,
            sum(pv) / 60000.0 AS pv_kwh, sum(outw) / 60000.0 AS out_kwh,
-           sum(greatest(bat, 0)) / 60000.0 AS charge_kwh, sum(greatest(-bat, 0)) / 60000.0 AS discharge_kwh
+           sum(greatest(bat, 0)) / 60000.0 AS charge_kwh, sum(greatest(-bat, 0)) / 60000.0 AS discharge_kwh,
+           sum(greatest(grid, 0)) / 60000.0 AS grid_kwh, sum(greatest(-grid, 0)) / 60000.0 AS feedin_kwh, sum(house) / 60000.0 AS house_kwh
     FROM mins GROUP BY 1 ORDER BY 1`;
 
   const totals = await sql`
     WITH mins AS (SELECT date_trunc('minute', ts) AS bucket_ts, avg(pv_w) AS pv, avg(out_w) AS outw FROM samples GROUP BY 1)
     SELECT sum(pv) / 60000.0 AS pv_kwh, sum(outw) / 60000.0 AS out_kwh, min(bucket_ts) AS since FROM mins`;
 
-  const shelly = await sql`SELECT updated, grid_w, household_w, out_w, target_w, setpoint_w, ok, enabled, host FROM shelly WHERE id = 1`;
+  // Zeiträume für Ersparnis und Netzkosten: seit Monats- und Jahresbeginn (lokale Zeit) und gesamt, aus Minutenmitteln
+  const periods = await sql`
+    WITH mins AS (SELECT date_trunc('minute', ts) AS m, avg(out_w) AS outw, avg(grid_w) AS grid FROM samples GROUP BY 1),
+    b AS (SELECT (date_trunc('month', now() AT TIME ZONE ${TZ}) AT TIME ZONE ${TZ}) AS ms, (date_trunc('year', now() AT TIME ZONE ${TZ}) AT TIME ZONE ${TZ}) AS ys)
+    SELECT sum(outw) FILTER (WHERE m >= b.ms) / 60000.0 AS out_month, sum(outw) FILTER (WHERE m >= b.ys) / 60000.0 AS out_year, sum(outw) / 60000.0 AS out_total,
+           sum(greatest(grid, 0)) FILTER (WHERE m >= b.ms) / 60000.0 AS grid_month, sum(greatest(grid, 0)) FILTER (WHERE m >= b.ys) / 60000.0 AS grid_year, sum(greatest(grid, 0)) / 60000.0 AS grid_total,
+           sum(greatest(-grid, 0)) FILTER (WHERE m >= b.ms) / 60000.0 AS feedin_month, sum(greatest(-grid, 0)) FILTER (WHERE m >= b.ys) / 60000.0 AS feedin_year, sum(greatest(-grid, 0)) / 60000.0 AS feedin_total,
+           count(DISTINCT (m AT TIME ZONE ${TZ})::date) AS days, min(m) AS since
+    FROM mins, b GROUP BY b.ms, b.ys`;
+  const tariff = await sql`SELECT price_ct_kwh, feedin_ct_kwh, system_cost_eur, currency, updated FROM tariff WHERE id = 1`;
+
+  const shelly = await sql`SELECT updated, grid_w, household_w, out_w, target_w, setpoint_w, ok, enabled, host, limited, reason, soc, soc_limit FROM shelly WHERE id = 1`;
   const wcur = await sql`SELECT * FROM weather_current WHERE id = 1`;
   const wfc = await sql`SELECT t, shortwave_radiation, cloud_cover, temperature, weather_code FROM weather_forecast
     WHERE t >= date_trunc('hour', now()) AND t < now() + interval '48 hours' ORDER BY t`;
@@ -109,9 +121,17 @@ export async function GET(req: NextRequest) {
                   temp_sys: num(l.temp_sys), temp_bat1: num(l.temp_bat1), temp_bat2: num(l.temp_bat2), pv_v: l.pv_v, pv_a: l.pv_a, packs: num(l.packs), status: l.status, mode: l.mode } : null,
     info: info[0] ? { ...(info[0].info as object), updated: info[0].updated } : null,
     series: series.map((r) => ({ t: r.t, pv: num(r.pv), out: num(r.out), bat: num(r.bat), soc: num(r.soc) })),
-    daily: daily.map((d) => ({ day: d.day, pv_kwh: num(d.pv_kwh), out_kwh: num(d.out_kwh), charge_kwh: num(d.charge_kwh), discharge_kwh: num(d.discharge_kwh) })),
-    today: todayRow ? { pv_kwh: num(todayRow.pv_kwh), out_kwh: num(todayRow.out_kwh), charge_kwh: num(todayRow.charge_kwh), discharge_kwh: num(todayRow.discharge_kwh) } : null,
+    daily: daily.map((d) => ({ day: d.day, pv_kwh: num(d.pv_kwh), out_kwh: num(d.out_kwh), charge_kwh: num(d.charge_kwh), discharge_kwh: num(d.discharge_kwh),
+                               grid_kwh: num(d.grid_kwh), feedin_kwh: num(d.feedin_kwh), house_kwh: num(d.house_kwh) })),
+    today: todayRow ? { pv_kwh: num(todayRow.pv_kwh), out_kwh: num(todayRow.out_kwh), charge_kwh: num(todayRow.charge_kwh), discharge_kwh: num(todayRow.discharge_kwh),
+                        grid_kwh: num(todayRow.grid_kwh), feedin_kwh: num(todayRow.feedin_kwh), house_kwh: num(todayRow.house_kwh) } : null,
     totals: totals[0] ? { pv_kwh: num(totals[0].pv_kwh), out_kwh: num(totals[0].out_kwh), since: totals[0].since } : null,
+    periods: periods[0] ? {
+      month: { out_kwh: num(periods[0].out_month), grid_kwh: num(periods[0].grid_month), feedin_kwh: num(periods[0].feedin_month) },
+      year: { out_kwh: num(periods[0].out_year), grid_kwh: num(periods[0].grid_year), feedin_kwh: num(periods[0].feedin_year) },
+      total: { out_kwh: num(periods[0].out_total), grid_kwh: num(periods[0].grid_total), feedin_kwh: num(periods[0].feedin_total), days: Number(periods[0].days), since: periods[0].since },
+    } : null,
+    tariff: tariff[0] ? { price_ct_kwh: num(tariff[0].price_ct_kwh), feedin_ct_kwh: num(tariff[0].feedin_ct_kwh) ?? 0, system_cost_eur: num(tariff[0].system_cost_eur) ?? 0, currency: tariff[0].currency || "EUR", updated: tariff[0].updated } : null,
     site: site[0] ? { name: site[0].name, lat: num(site[0].lat), lon: num(site[0].lon), strings: site[0].strings || {}, fit: site[0].fit || null, advice: site[0].advice || null, assumed: site[0].assumed || {}, updated: site[0].updated } : null,
     day: { key: day, start: dayBounds[0].start, end: dayBounds[0].end, today: todayKey },
     string_peaks: peaks.map((r) => ({ day: String(r.day), string: Number(r.string), t: r.ts, w: num(r.p) })),
@@ -119,7 +139,8 @@ export async function GET(req: NextRequest) {
     heat: heat.map((r) => ({ day: String(r.day), hour: Number(r.hour), s1: num(r.s1), s2: num(r.s2), s3: num(r.s3), s4: num(r.s4), pv: num(r.pv) })),
     alltime: { since: a?.since ?? null, days: a ? Number(a.days) : 0, minutes: a ? Number(a.minutes) : 0, total: allOf(0), strings: Object.fromEntries([1, 2, 3, 4].map((i) => [String(i), allOf(i)])) },
     model_day: modelDay.map((r) => ({ t: r.t, string: Number(r.string), gti: num(r.gti), expected_w: num(r.expected_w) })),
-    shelly: shelly[0] ? { updated: shelly[0].updated, grid_w: num(shelly[0].grid_w), household_w: num(shelly[0].household_w), out_w: num(shelly[0].out_w), target_w: num(shelly[0].target_w), setpoint_w: num(shelly[0].setpoint_w), ok: shelly[0].ok, enabled: shelly[0].enabled, host: shelly[0].host } : null,
+    shelly: shelly[0] ? { updated: shelly[0].updated, grid_w: num(shelly[0].grid_w), household_w: num(shelly[0].household_w), out_w: num(shelly[0].out_w), target_w: num(shelly[0].target_w), setpoint_w: num(shelly[0].setpoint_w), ok: shelly[0].ok, enabled: shelly[0].enabled, host: shelly[0].host,
+                          limited: shelly[0].limited ?? null, reason: shelly[0].reason ?? null, soc: num(shelly[0].soc), soc_limit: num(shelly[0].soc_limit) } : null,
     weather: {
       current: wcur[0] ? { ...wcur[0], id: undefined } : null,
       forecast: wfc.map((f) => ({ t: f.t, shortwave_radiation: num(f.shortwave_radiation), cloud_cover: num(f.cloud_cover), temperature: num(f.temperature), weather_code: f.weather_code })),

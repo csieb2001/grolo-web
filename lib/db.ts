@@ -45,6 +45,13 @@ export function ensureSchema() {
       await sql`CREATE TABLE IF NOT EXISTS pv_model (
         t timestamptz NOT NULL, string smallint NOT NULL, gti real, expected_w real, PRIMARY KEY (t, string)
       )`;
+      // Netzbezug und Hausverbrauch (Shelly, Mittel je Intervall) am Sample, für Netzkosten und Eigenversorgung pro Tag
+      await sql`ALTER TABLE samples ADD COLUMN IF NOT EXISTS grid_w real, ADD COLUMN IF NOT EXISTS house_w real`;
+      await sql`ALTER TABLE shelly ADD COLUMN IF NOT EXISTS limited boolean, ADD COLUMN IF NOT EXISTS reason text, ADD COLUMN IF NOT EXISTS soc real, ADD COLUMN IF NOT EXISTS soc_limit real`;
+      // Strompreis von der Einstellungsseite des Stacks (retained grolo/config/tariff), Grundlage für Ersparnis und Kosten
+      await sql`CREATE TABLE IF NOT EXISTS tariff (
+        id smallint PRIMARY KEY DEFAULT 1, updated timestamptz NOT NULL, price_ct_kwh real NOT NULL, feedin_ct_kwh real, system_cost_eur real, currency text
+      )`;
     })();
   }
   return ready;

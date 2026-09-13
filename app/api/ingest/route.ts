@@ -10,7 +10,9 @@ type WeatherCurrent = { temperature?: number | null; cloud_cover?: number | null
 type WeatherForecast = { t: string; shortwave_radiation?: number | null; cloud_cover?: number | null; temperature?: number | null; weather_code?: number | null };
 type Site = { name?: string | null; lat?: number | null; lon?: number | null; strings?: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }>; assumed?: Record<string, unknown> };
 type ModelRow = { t: string; string: number; gti?: number | null; expected_w?: number | null };
-type ShellyState = { grid_w?: number|null; household_w?: number|null; out_w?: number|null; target_w?: number|null; setpoint_w?: number|null; ok?: boolean|null; enabled?: boolean|null; host?: string|null };
+type ShellyState = { grid_w?: number|null; household_w?: number|null; out_w?: number|null; target_w?: number|null; setpoint_w?: number|null; ok?: boolean|null; enabled?: boolean|null; host?: string|null;
+  limited?: boolean|null; reason?: string|null; soc?: number|null; soc_limit?: number|null };
+type Tariff = { price_ct_kwh?: number|null; feedin_ct_kwh?: number|null; system_cost_eur?: number|null; currency?: string|null; updated?: number|null };
 type Weather = { ts?: string; current?: WeatherCurrent & { sun_azimuth?: number | null; sun_elevation?: number | null }; forecast?: WeatherForecast[]; site?: Site; model?: ModelRow[]; fit?: Record<string, unknown> | null; advice?: Record<string, unknown> | null };
 
 type Sample = {
@@ -18,6 +20,7 @@ type Sample = {
   soc1?: number; soc2?: number; soc3?: number; soc4?: number;
   temp_sys?: number; temp_bat1?: number; temp_bat2?: number;
   pv_v?: number[]; pv_a?: number[]; packs?: number; status?: string; mode?: string;
+  grid_w?: number | null; house_w?: number | null;
 };
 
 // POST { samples: Sample[], info?: {...} }  Authorization: Bearer <INGEST_TOKEN>
@@ -26,20 +29,21 @@ export async function POST(req: NextRequest) {
   if (!process.env.INGEST_TOKEN || auth !== `Bearer ${process.env.INGEST_TOKEN}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  let body: { samples?: Sample[]; info?: Record<string, unknown> & { device?: string }; weather?: Weather; shelly?: ShellyState };
+  let body: { samples?: Sample[]; info?: Record<string, unknown> & { device?: string }; weather?: Weather; shelly?: ShellyState; tariff?: Tariff };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "bad json" }, { status: 400 }); }
   await ensureSchema();
   const samples = (body.samples || []).slice(0, 500);
   let n = 0;
   for (const s of samples) {
     if (!s.ts || !s.device) continue;
-    await sql`INSERT INTO samples (ts, device, pv_w, out_w, bat_w, soc, soc1, soc2, soc3, soc4, temp_sys, temp_bat1, temp_bat2, pv_v, pv_a, packs, status, mode)
+    await sql`INSERT INTO samples (ts, device, pv_w, out_w, bat_w, soc, soc1, soc2, soc3, soc4, temp_sys, temp_bat1, temp_bat2, pv_v, pv_a, packs, status, mode, grid_w, house_w)
       VALUES (${s.ts}, ${s.device}, ${s.pv_w}, ${s.out_w}, ${s.bat_w}, ${s.soc}, ${s.soc1 ?? null}, ${s.soc2 ?? null}, ${s.soc3 ?? null}, ${s.soc4 ?? null},
-              ${s.temp_sys ?? null}, ${s.temp_bat1 ?? null}, ${s.temp_bat2 ?? null}, ${s.pv_v ?? null}, ${s.pv_a ?? null}, ${s.packs ?? null}, ${s.status ?? null}, ${s.mode ?? null})
+              ${s.temp_sys ?? null}, ${s.temp_bat1 ?? null}, ${s.temp_bat2 ?? null}, ${s.pv_v ?? null}, ${s.pv_a ?? null}, ${s.packs ?? null}, ${s.status ?? null}, ${s.mode ?? null},
+              ${s.grid_w ?? null}, ${s.house_w ?? null})
       ON CONFLICT (device, ts) DO UPDATE SET pv_w = EXCLUDED.pv_w, out_w = EXCLUDED.out_w, bat_w = EXCLUDED.bat_w, soc = EXCLUDED.soc,
         soc1 = EXCLUDED.soc1, soc2 = EXCLUDED.soc2, soc3 = EXCLUDED.soc3, soc4 = EXCLUDED.soc4, temp_sys = EXCLUDED.temp_sys,
         temp_bat1 = EXCLUDED.temp_bat1, temp_bat2 = EXCLUDED.temp_bat2, pv_v = EXCLUDED.pv_v, pv_a = EXCLUDED.pv_a, packs = EXCLUDED.packs,
-        status = EXCLUDED.status, mode = EXCLUDED.mode`;
+        status = EXCLUDED.status, mode = EXCLUDED.mode, grid_w = EXCLUDED.grid_w, house_w = EXCLUDED.house_w`;
     n++;
   }
   if (body.info && body.info.device) {
@@ -96,10 +100,21 @@ export async function POST(req: NextRequest) {
   }
   const sh = body.shelly;
   if (sh && typeof sh === "object") {
-    await sql`INSERT INTO shelly (id, updated, grid_w, household_w, out_w, target_w, setpoint_w, ok, enabled, host)
-      VALUES (1, now(), ${sh.grid_w ?? null}, ${sh.household_w ?? null}, ${sh.out_w ?? null}, ${sh.target_w ?? null}, ${sh.setpoint_w ?? null}, ${sh.ok ?? null}, ${sh.enabled ?? null}, ${sh.host ?? null})
+    await sql`INSERT INTO shelly (id, updated, grid_w, household_w, out_w, target_w, setpoint_w, ok, enabled, host, limited, reason, soc, soc_limit)
+      VALUES (1, now(), ${sh.grid_w ?? null}, ${sh.household_w ?? null}, ${sh.out_w ?? null}, ${sh.target_w ?? null}, ${sh.setpoint_w ?? null}, ${sh.ok ?? null}, ${sh.enabled ?? null}, ${sh.host ?? null},
+              ${sh.limited ?? null}, ${sh.reason ?? null}, ${sh.soc ?? null}, ${sh.soc_limit ?? null})
       ON CONFLICT (id) DO UPDATE SET updated = now(), grid_w = EXCLUDED.grid_w, household_w = EXCLUDED.household_w, out_w = EXCLUDED.out_w,
-        target_w = EXCLUDED.target_w, setpoint_w = EXCLUDED.setpoint_w, ok = EXCLUDED.ok, enabled = EXCLUDED.enabled, host = EXCLUDED.host`;
+        target_w = EXCLUDED.target_w, setpoint_w = EXCLUDED.setpoint_w, ok = EXCLUDED.ok, enabled = EXCLUDED.enabled, host = EXCLUDED.host,
+        limited = EXCLUDED.limited, reason = EXCLUDED.reason, soc = EXCLUDED.soc, soc_limit = EXCLUDED.soc_limit`;
   }
-  return NextResponse.json({ ok: true, inserted: n, weather });
+  let tariff = 0;
+  const tf = body.tariff;
+  if (tf && typeof tf === "object" && tf.price_ct_kwh != null && Number.isFinite(Number(tf.price_ct_kwh))) {
+    await sql`INSERT INTO tariff (id, updated, price_ct_kwh, feedin_ct_kwh, system_cost_eur, currency)
+      VALUES (1, now(), ${Number(tf.price_ct_kwh)}, ${tf.feedin_ct_kwh ?? 0}, ${tf.system_cost_eur ?? 0}, ${tf.currency ?? "EUR"})
+      ON CONFLICT (id) DO UPDATE SET updated = now(), price_ct_kwh = EXCLUDED.price_ct_kwh, feedin_ct_kwh = EXCLUDED.feedin_ct_kwh,
+        system_cost_eur = EXCLUDED.system_cost_eur, currency = EXCLUDED.currency`;
+    tariff = 1;
+  }
+  return NextResponse.json({ ok: true, inserted: n, weather, tariff });
 }

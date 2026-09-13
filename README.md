@@ -2,7 +2,9 @@
 
 Password-protected live mirror of a Growatt NEXA 2000 balcony battery, hosted on Vercel. The local
 [GroLo stack](https://github.com/csieb2001/grolo) pushes cleaned measurements and weather data every 30 s; this app
-stores them in Neon Postgres and renders tiles, charts and daily energy figures in English and German.
+stores them in Neon Postgres and renders a live power-flow schema (solar → NEXA/battery → home, grid ↔ home with a Shelly
+meter, animated like the energy-flow screens of the Anker SOLIX or Growatt apps), tiles, charts, daily energy figures and a
+**Costs and savings** section (saved today/month/year/total, grid cost, payback) in English and German.
 
 ```
 GroLo stack (LXC) ── web-push sidecar ──POST /api/ingest (Bearer token)──▶ Vercel ──▶ Neon Postgres
@@ -30,7 +32,11 @@ The push service in the stack needs `WEB_URL=https://grolo-web.vercel.app` and `
 {
   "samples": [{ "ts": "2026-09-06T10:00:00Z", "device": "<serial>", "pv_w": 45.2, "out_w": 85.0, "bat_w": -39.8, "soc": 48,
                 "soc1": 51, "soc2": 46, "temp_sys": 29.5, "temp_bat1": 21.0, "temp_bat2": 18.0,
-                "pv_v": [33.1, 7.2, 7.2, 7.2], "pv_a": [1.44, 0.1, 0, 0.04], "packs": 2, "status": "Idle", "mode": "Load First" }],
+                "pv_v": [33.1, 7.2, 7.2, 7.2], "pv_a": [1.44, 0.1, 0, 0.04], "packs": 2, "status": "Idle", "mode": "Load First",
+                "grid_w": 212.5, "house_w": 297.5 }],
+  "shelly": { "grid_w": 212.5, "household_w": 297.5, "out_w": 85.0, "target_w": 300, "setpoint_w": 20, "ok": true, "enabled": true, "host": "192.168.1.158",
+              "limited": false, "reason": "ok", "soc": 48, "soc_limit": 8 },
+  "tariff": { "price_ct_kwh": 32.5, "feedin_ct_kwh": 0, "system_cost_eur": 1500, "currency": "EUR" },
   "info": { "device": "<serial>", "dongle_model": "GTSW0000", "dongle_sw": "4.0.2.6", "dongle_hw": "V1.0", "wifi_dbm": "-68" },
   "weather": {
     "ts": "2026-09-06T10:00:00Z",
@@ -47,12 +53,17 @@ The push service in the stack needs `WEB_URL=https://grolo-web.vercel.app` and `
 `weather.current` may also carry `sun_azimuth` / `sun_elevation`. `weather.site` is the location and panel orientation from
 the GroLo settings page, `weather.model` the expected power per string and hour (transposed Open-Meteo irradiance).
 
-All fields are optional except `ts` and `device` per sample; `info` and `weather` may be missing. Samples are upserted on
+`grid_w`/`house_w` per sample are the Shelly grid import and household load averaged over the push interval (only while the
+zero feed-in control runs); `shelly` is the controller state, `tariff` the electricity price from the stack's settings page
+(one row, upserted). All fields are optional except `ts` and `device` per sample; `info`, `weather`, `shelly` and `tariff` may be missing. Samples are upserted on
 `(device, ts)`, `weather.current` is kept as a single row plus a history row per timestamp, `weather.forecast` is upserted per
 hour so newer forecasts overwrite older ones. Tables are created on first use.
 
 `GET /api/data?range=24h|7d|30d&day=YYYY-MM-DD` (cookie required) returns `latest`, `series` (bucketed), `daily` (kWh per day
-from minute averages), `today`, `totals`, `info`, `weather { current, forecast (next 48 h), history }` and for the strings
+from minute averages, including `grid_kwh`/`feedin_kwh`/`house_kwh` from the Shelly), `today`, `totals`, `periods` (output to
+house, grid import and export since the start of the month and year and in total, with `days` and `since` for the payback
+estimate), `tariff` (price, feed-in rate, system price; the page assumes 30 ct/kWh when missing), `shelly` (controller state
+incl. `reason`), `info`, `weather { current, forecast (next 48 h), history }` and for the strings
 section `site`, `day` (bounds of the selected day, default today), `string_peaks` (daily peak per string, 30 days),
 `strings_day` (5-minute power per string of the selected day), `heat` (hourly mean per string and day, 30 days),
 `model_day` (expected power per string of the selected day) and `alltime` (per string and total: highest 30-second sample
