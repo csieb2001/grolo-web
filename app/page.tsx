@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { SunSection, type SunData } from "./sun";
 import { PowerFlow } from "./flow";
+import { explainSmart } from "./explain";
 
 type Data = Partial<SunData> & {
   updated: string | null; device: string | null;
@@ -15,7 +16,7 @@ type Data = Partial<SunData> & {
   periods?: { month: Period; year: Period; total: Period & { days: number; since: string | null } } | null;
   tariff?: { price_ct_kwh: number | null; feedin_ct_kwh: number; system_cost_eur: number; currency: string; updated: string } | null;
   shelly?: { updated: string; grid_w: number|null; household_w: number|null; out_w: number|null; target_w: number|null; setpoint_w: number|null; ok: boolean|null; enabled: boolean|null; host: string|null;
-             limited?: boolean|null; reason?: string|null; soc?: number|null; soc_limit?: number|null } | null;
+             limited?: boolean|null; reason?: string|null; soc?: number|null; soc_limit?: number|null; max_w?: number|null } | null;
   weather?: {
     current: { ts?: string; temperature?: number | null; cloud_cover?: number | null; shortwave_radiation?: number | null; wind_speed?: number | null; condition_en?: string | null; condition_de?: string | null;
                sunrise?: string | null; sunset?: string | null; sunshine_duration_today?: number | null; radiation_sum_today?: number | null } | null;
@@ -117,6 +118,7 @@ export default function Page() {
             <PowerFlow pv={l?.pv_w ?? null} out={l?.out_w ?? null} bat={l?.bat_w ?? null} soc={l?.soc ?? null} packs={l?.packs ?? null}
                        grid={live ? sh!.grid_w : null} house={live ? sh!.household_w : null} socLimit={sh?.soc_limit ?? null} limited={sh?.limited ?? null} siteName={data?.site?.name ?? null} fmtW={fmtW}
                        labels={{ solar: t.flowSolar, battery: t.flowBattery, home: t.flowHome, grid: t.flowGrid, nexa: t.flowNexa, noGrid: t.flowNoGrid, self: t.flowSelf, charging: t.charging, discharging: t.discharging, idle: t.idle, socLimit: t.flowSocLimit }} />
+            <div>
             <div className="tiles">
               <Tile k={t.pv} v={fmtW(l?.pv_w)} color="var(--pv)" s={pvIn != null ? `${t.pvin}: ${pvIn} / 4` : undefined} />
               <Tile k={t.out} v={fmtW(l?.out_w)} color="var(--house)" />
@@ -124,6 +126,8 @@ export default function Page() {
               <Tile k={t.soc} v={l ? `${Math.round(l.soc)}` : "–"} unit="%" color="var(--soc)" s={l?.packs ? `${t.packs}: ${l.packs}` : undefined} />
               <Tile k={t.mode} v={l?.mode ? (t.modes[l.mode] || l.mode) : "–"} />
               <Tile k={t.tsys} v={l?.temp_sys != null ? l.temp_sys.toFixed(1) : "–"} unit="°C" />
+            </div>
+            {l && <div className="explain">{explainSmart(lang, { pv: l.pv_w, out: l.out_w, bat: l.bat_w, soc: l.soc, mode: l.mode ? (t.modes[l.mode] || l.mode) : null, sh: sh ?? null, live: !!live }, fmtW)}</div>}
             </div>
           </div>
         </section>); })()}

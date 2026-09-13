@@ -47,7 +47,7 @@ export function ensureSchema() {
       )`;
       // Netzbezug und Hausverbrauch (Shelly, Mittel je Intervall) am Sample, für Netzkosten und Eigenversorgung pro Tag
       await sql`ALTER TABLE samples ADD COLUMN IF NOT EXISTS grid_w real, ADD COLUMN IF NOT EXISTS house_w real`;
-      await sql`ALTER TABLE shelly ADD COLUMN IF NOT EXISTS limited boolean, ADD COLUMN IF NOT EXISTS reason text, ADD COLUMN IF NOT EXISTS soc real, ADD COLUMN IF NOT EXISTS soc_limit real`;
+      await sql`ALTER TABLE shelly ADD COLUMN IF NOT EXISTS limited boolean, ADD COLUMN IF NOT EXISTS reason text, ADD COLUMN IF NOT EXISTS soc real, ADD COLUMN IF NOT EXISTS soc_limit real, ADD COLUMN IF NOT EXISTS max_w real`;
       // Strompreis von der Einstellungsseite des Stacks (retained grolo/config/tariff), Grundlage für Ersparnis und Kosten
       await sql`CREATE TABLE IF NOT EXISTS tariff (
         id smallint PRIMARY KEY DEFAULT 1, updated timestamptz NOT NULL, price_ct_kwh real NOT NULL, feedin_ct_kwh real, system_cost_eur real, currency text

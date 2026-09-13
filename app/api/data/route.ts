@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
     FROM mins, b GROUP BY b.ms, b.ys`;
   const tariff = await sql`SELECT price_ct_kwh, feedin_ct_kwh, system_cost_eur, currency, updated FROM tariff WHERE id = 1`;
 
-  const shelly = await sql`SELECT updated, grid_w, household_w, out_w, target_w, setpoint_w, ok, enabled, host, limited, reason, soc, soc_limit FROM shelly WHERE id = 1`;
+  const shelly = await sql`SELECT updated, grid_w, household_w, out_w, target_w, setpoint_w, ok, enabled, host, limited, reason, soc, soc_limit, max_w FROM shelly WHERE id = 1`;
   const wcur = await sql`SELECT * FROM weather_current WHERE id = 1`;
   const wfc = await sql`SELECT t, shortwave_radiation, cloud_cover, temperature, weather_code FROM weather_forecast
     WHERE t >= date_trunc('hour', now()) AND t < now() + interval '48 hours' ORDER BY t`;
@@ -140,7 +140,7 @@ export async function GET(req: NextRequest) {
     alltime: { since: a?.since ?? null, days: a ? Number(a.days) : 0, minutes: a ? Number(a.minutes) : 0, total: allOf(0), strings: Object.fromEntries([1, 2, 3, 4].map((i) => [String(i), allOf(i)])) },
     model_day: modelDay.map((r) => ({ t: r.t, string: Number(r.string), gti: num(r.gti), expected_w: num(r.expected_w) })),
     shelly: shelly[0] ? { updated: shelly[0].updated, grid_w: num(shelly[0].grid_w), household_w: num(shelly[0].household_w), out_w: num(shelly[0].out_w), target_w: num(shelly[0].target_w), setpoint_w: num(shelly[0].setpoint_w), ok: shelly[0].ok, enabled: shelly[0].enabled, host: shelly[0].host,
-                          limited: shelly[0].limited ?? null, reason: shelly[0].reason ?? null, soc: num(shelly[0].soc), soc_limit: num(shelly[0].soc_limit) } : null,
+                          limited: shelly[0].limited ?? null, reason: shelly[0].reason ?? null, soc: num(shelly[0].soc), soc_limit: num(shelly[0].soc_limit), max_w: num(shelly[0].max_w) } : null,
     weather: {
       current: wcur[0] ? { ...wcur[0], id: undefined } : null,
       forecast: wfc.map((f) => ({ t: f.t, shortwave_radiation: num(f.shortwave_radiation), cloud_cover: num(f.cloud_cover), temperature: num(f.temperature), weather_code: f.weather_code })),

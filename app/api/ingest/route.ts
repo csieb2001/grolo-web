@@ -11,7 +11,7 @@ type WeatherForecast = { t: string; shortwave_radiation?: number | null; cloud_c
 type Site = { name?: string | null; lat?: number | null; lon?: number | null; strings?: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }>; assumed?: Record<string, unknown> };
 type ModelRow = { t: string; string: number; gti?: number | null; expected_w?: number | null };
 type ShellyState = { grid_w?: number|null; household_w?: number|null; out_w?: number|null; target_w?: number|null; setpoint_w?: number|null; ok?: boolean|null; enabled?: boolean|null; host?: string|null;
-  limited?: boolean|null; reason?: string|null; soc?: number|null; soc_limit?: number|null };
+  limited?: boolean|null; reason?: string|null; soc?: number|null; soc_limit?: number|null; max_w?: number|null };
 type Tariff = { price_ct_kwh?: number|null; feedin_ct_kwh?: number|null; system_cost_eur?: number|null; currency?: string|null; updated?: number|null };
 type Weather = { ts?: string; current?: WeatherCurrent & { sun_azimuth?: number | null; sun_elevation?: number | null }; forecast?: WeatherForecast[]; site?: Site; model?: ModelRow[]; fit?: Record<string, unknown> | null; advice?: Record<string, unknown> | null };
 
@@ -100,12 +100,12 @@ export async function POST(req: NextRequest) {
   }
   const sh = body.shelly;
   if (sh && typeof sh === "object") {
-    await sql`INSERT INTO shelly (id, updated, grid_w, household_w, out_w, target_w, setpoint_w, ok, enabled, host, limited, reason, soc, soc_limit)
+    await sql`INSERT INTO shelly (id, updated, grid_w, household_w, out_w, target_w, setpoint_w, ok, enabled, host, limited, reason, soc, soc_limit, max_w)
       VALUES (1, now(), ${sh.grid_w ?? null}, ${sh.household_w ?? null}, ${sh.out_w ?? null}, ${sh.target_w ?? null}, ${sh.setpoint_w ?? null}, ${sh.ok ?? null}, ${sh.enabled ?? null}, ${sh.host ?? null},
-              ${sh.limited ?? null}, ${sh.reason ?? null}, ${sh.soc ?? null}, ${sh.soc_limit ?? null})
+              ${sh.limited ?? null}, ${sh.reason ?? null}, ${sh.soc ?? null}, ${sh.soc_limit ?? null}, ${sh.max_w ?? null})
       ON CONFLICT (id) DO UPDATE SET updated = now(), grid_w = EXCLUDED.grid_w, household_w = EXCLUDED.household_w, out_w = EXCLUDED.out_w,
         target_w = EXCLUDED.target_w, setpoint_w = EXCLUDED.setpoint_w, ok = EXCLUDED.ok, enabled = EXCLUDED.enabled, host = EXCLUDED.host,
-        limited = EXCLUDED.limited, reason = EXCLUDED.reason, soc = EXCLUDED.soc, soc_limit = EXCLUDED.soc_limit`;
+        limited = EXCLUDED.limited, reason = EXCLUDED.reason, soc = EXCLUDED.soc, soc_limit = EXCLUDED.soc_limit, max_w = EXCLUDED.max_w`;
   }
   let tariff = 0;
   const tf = body.tariff;
