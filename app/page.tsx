@@ -13,6 +13,7 @@ type Data = Partial<SunData> & {
   daily: { day: string; pv_kwh: number; out_kwh: number; charge_kwh: number; discharge_kwh: number; grid_kwh?: number | null; feedin_kwh?: number | null; house_kwh?: number | null }[];
   today: { pv_kwh: number; out_kwh: number; charge_kwh: number; discharge_kwh: number; grid_kwh?: number | null; feedin_kwh?: number | null; house_kwh?: number | null } | null;
   totals: { pv_kwh: number; out_kwh: number; since: string } | null;
+  string_rank?: { string: number; kwh_24h: number | null; kwh_7d: number | null; kwh_30d: number | null }[];
   periods?: { month: Period; year: Period; total: Period & { days: number; since: string | null } } | null;
   tariff?: { price_ct_kwh: number | null; feedin_ct_kwh: number; system_cost_eur: number; currency: string; updated: string } | null;
   shelly?: { updated: string; grid_w: number|null; household_w: number|null; out_w: number|null; target_w: number|null; setpoint_w: number|null; ok: boolean|null; enabled: boolean|null; host: string|null;
@@ -40,7 +41,7 @@ const T = {
         costs: "Costs and savings", costsAt: "at {p} ct/kWh", costsSet: "set on the GroLo settings page", costsDefault: "default, not set yet", saved: "saved", month: "This month", year: "This year", gridCost: "grid cost", feedinRev: "feed-in revenue",
         payback: "Payback", paybackText: "{pct} % of {cost} recovered · about {y} years to go at the current pace", paybackDone: "{cost} recovered, the system has paid for itself",
         dailyCost: "Savings and grid cost per day", costsHint: "Savings = energy delivered to the house × price (grid power you did not have to buy). Grid cost = grid import measured by the Shelly × price, only while the zero feed-in control runs.",
-        flow: "Power flow", flowSolar: "Solar", flowBattery: "Battery", flowHome: "Home", flowGrid: "Grid", flowNexa: "NEXA", flowNoGrid: "grid only with a Shelly meter", flowSelf: "self-sufficiency", flowSocLimit: "discharge limit",
+        topPanels: "Top panels", topHint: "Energy per PV input (voltage × current), ranked. Share = part of the total of all inputs in that window.", noYield: "no yield", flow: "Power flow", flowSolar: "Solar", flowBattery: "Battery", flowHome: "Home", flowGrid: "Grid", flowNexa: "NEXA", flowNoGrid: "grid only with a Shelly meter", flowSelf: "self-sufficiency", flowSocLimit: "discharge limit",
         weather: "Weather", wtemp: "Temperature", wcond: "Conditions", wcloud: "Cloud cover", wrad: "Global radiation", wsun: "Sunrise – sunset", wsunshine: "Sunshine today", wradsum: "Radiation today",
         wnone: "no weather data yet", wchart: "Global radiation vs. PV power", wforecast: "Forecast 48 h", wradiation: "Radiation", apierr: "Data API is not responding",
         footer: "Read-only mirror of a local GroLo installation. Data every 30 s, no control from here.", range: { "24h": "24 h", "7d": "7 days", "30d": "30 days" } as Record<string, string> },
@@ -56,7 +57,7 @@ const T = {
         costs: "Kosten und Ersparnis", costsAt: "bei {p} ct/kWh", costsSet: "einstellbar auf der GroLo-Einstellungsseite", costsDefault: "Standard, noch nicht gesetzt", saved: "gespart", month: "Dieser Monat", year: "Dieses Jahr", gridCost: "Netzkosten", feedinRev: "Einspeisevergütung",
         payback: "Amortisation", paybackText: "{pct} % von {cost} zurückverdient · bei diesem Tempo noch etwa {y} Jahre", paybackDone: "{cost} zurückverdient, die Anlage hat sich bezahlt gemacht",
         dailyCost: "Ersparnis und Netzkosten pro Tag", costsHint: "Ersparnis = ins Haus abgegebene Energie × Preis (Netzstrom, den du nicht kaufen musstest). Netzkosten = Netzbezug laut Shelly × Preis, nur solange die Nulleinspeisung läuft.",
-        flow: "Energiefluss", flowSolar: "Solar", flowBattery: "Batterie", flowHome: "Haus", flowGrid: "Netz", flowNexa: "NEXA", flowNoGrid: "Netz nur mit Shelly-Zähler", flowSelf: "Eigenversorgung", flowSocLimit: "Entladegrenze",
+        topPanels: "Top-Panels", topHint: "Energie je PV-Eingang (Spannung × Strom), als Rangliste. Anteil = Anteil an der Summe aller Eingänge im jeweiligen Zeitraum.", noYield: "kein Ertrag", flow: "Energiefluss", flowSolar: "Solar", flowBattery: "Batterie", flowHome: "Haus", flowGrid: "Netz", flowNexa: "NEXA", flowNoGrid: "Netz nur mit Shelly-Zähler", flowSelf: "Eigenversorgung", flowSocLimit: "Entladegrenze",
         weather: "Wetter", wtemp: "Temperatur", wcond: "Wetterlage", wcloud: "Bewölkung", wrad: "Globalstrahlung", wsun: "Sonnenaufgang – Sonnenuntergang", wsunshine: "Sonnenschein heute", wradsum: "Strahlung heute",
         wnone: "noch keine Wetterdaten", wchart: "Globalstrahlung und PV-Leistung", wforecast: "Vorhersage 48 h", wradiation: "Strahlung", apierr: "Daten-API antwortet nicht",
         footer: "Nur-Lese-Spiegel einer lokalen GroLo-Installation. Daten alle 30 s, keine Steuerung von hier.", range: { "24h": "24 h", "7d": "7 Tage", "30d": "30 Tage" } as Record<string, string> },
@@ -199,6 +200,25 @@ export default function Page() {
               <div className="chart"><div className="muted" style={{ fontSize: 12 }}>{t.dailyCost}</div><ResponsiveContainer height={250}><BarChart data={dailyEur}><CartesianGrid stroke="#2c3235" /><XAxis dataKey="label" stroke="#8e8e8e" fontSize={11} /><YAxis stroke="#8e8e8e" fontSize={11} tickFormatter={(v) => eur(Number(v))} width={70} /><Tooltip {...tip} formatter={(v) => eur(Number(v))} /><Legend />
                 <Bar dataKey="saved" name={t.saved} fill="#73bf69" />{hasGrid && <Bar dataKey="grid" name={t.gridCost} fill="#f2495c" />}</BarChart></ResponsiveContainer></div>
               <div className="muted" style={{ fontSize: 12.5, alignSelf: "center" }}>{t.costsHint}</div>
+            </div>
+          </section>); })()}
+        {data?.string_rank && data.string_rank.length > 0 && (() => {
+          const SC = ["#f2cc0c", "#ff9830", "#8ab8ff", "#b877d9"];
+          const wins: { key: "kwh_24h" | "kwh_7d" | "kwh_30d"; label: string }[] = [{ key: "kwh_24h", label: t.range["24h"] }, { key: "kwh_7d", label: t.range["7d"] }, { key: "kwh_30d", label: t.range["30d"] }];
+          return (
+          <section><h2>{t.topPanels} <small className="muted" style={{ fontSize: 12, fontWeight: 400 }}>· {t.topHint}</small></h2>
+            <div className="rankwrap">
+              {wins.map(w => {
+                const rows = [...data.string_rank!].map(r => ({ string: r.string, kwh: r[w.key] ?? 0 })).sort((a, b) => b.kwh - a.kwh);
+                const total = rows.reduce((a, r) => a + r.kwh, 0), best = rows[0]?.kwh || 0;
+                return (<div key={w.key} className="rank"><div className="k">{w.label}</div>
+                  {rows.map((r, i) => (<div key={r.string} className="row">
+                    <span className="pos">{i + 1}.</span><span className="name" style={{ color: SC[r.string - 1] }}>{t.string} {r.string}</span>
+                    <span className="bar"><span style={{ width: `${best > 0 ? r.kwh / best * 100 : 0}%`, background: SC[r.string - 1] }} /></span>
+                    <span className="val">{r.kwh > 0.0005 ? fmtKwh(r.kwh) : t.noYield}</span><span className="pct">{total > 0 && r.kwh > 0.0005 ? `${Math.round(r.kwh / total * 100)} %` : ""}</span>
+                  </div>))}
+                </div>);
+              })}
             </div>
           </section>); })()}
         {data?.day && <SunSection lang={lang} setDay={setDay} fmtDate={(iso) => new Date(iso).toLocaleDateString(locale, { day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" })}

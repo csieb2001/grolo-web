@@ -107,6 +107,16 @@ export async function GET(req: NextRequest) {
     SELECT avg(pv) AS pv, avg(s1) AS s1, avg(s2) AS s2, avg(s3) AS s3, avg(s4) AS s4, count(*) AS minutes,
            count(DISTINCT (m AT TIME ZONE ${TZ})::date) AS days, (SELECT min(m) FROM mins) AS since
     FROM sun WHERE sin_el > 0`;
+  // Rangliste der Strings: Energie je Eingang in den letzten 24 h, 7 und 30 Tagen aus Minutenmitteln (Spannung × Strom)
+  const rank = await sql`
+    WITH mins AS (
+      SELECT date_trunc('minute', ts) AS m, avg(pv_v[1] * pv_a[1]) AS s1, avg(pv_v[2] * pv_a[2]) AS s2, avg(pv_v[3] * pv_a[3]) AS s3, avg(pv_v[4] * pv_a[4]) AS s4
+      FROM samples WHERE ts > now() - interval '30 days' AND pv_v IS NOT NULL AND pv_a IS NOT NULL GROUP BY 1)
+    SELECT s AS string,
+           sum(CASE s WHEN 1 THEN s1 WHEN 2 THEN s2 WHEN 3 THEN s3 ELSE s4 END) FILTER (WHERE m > now() - interval '24 hours') / 60000.0 AS kwh_24h,
+           sum(CASE s WHEN 1 THEN s1 WHEN 2 THEN s2 WHEN 3 THEN s3 ELSE s4 END) FILTER (WHERE m > now() - interval '7 days') / 60000.0 AS kwh_7d,
+           sum(CASE s WHEN 1 THEN s1 WHEN 2 THEN s2 WHEN 3 THEN s3 ELSE s4 END) / 60000.0 AS kwh_30d
+    FROM mins, generate_series(1, 4) AS s GROUP BY s ORDER BY s`;
   const modelDay = await sql`SELECT t, string, gti, expected_w FROM pv_model WHERE t >= ${dayBounds[0].start}::timestamptz - interval '1 hour' AND t < ${dayBounds[0].end}::timestamptz + interval '1 hour' ORDER BY t`;
 
   const todayRow = daily.find((d) => d.day === todayKey);
@@ -138,6 +148,7 @@ export async function GET(req: NextRequest) {
     strings_day: stringsDay.map((r) => ({ t: r.t, s1: num(r.s1), s2: num(r.s2), s3: num(r.s3), s4: num(r.s4), pv: num(r.pv) })),
     heat: heat.map((r) => ({ day: String(r.day), hour: Number(r.hour), s1: num(r.s1), s2: num(r.s2), s3: num(r.s3), s4: num(r.s4), pv: num(r.pv) })),
     alltime: { since: a?.since ?? null, days: a ? Number(a.days) : 0, minutes: a ? Number(a.minutes) : 0, total: allOf(0), strings: Object.fromEntries([1, 2, 3, 4].map((i) => [String(i), allOf(i)])) },
+    string_rank: rank.map((r) => ({ string: Number(r.string), kwh_24h: num(r.kwh_24h), kwh_7d: num(r.kwh_7d), kwh_30d: num(r.kwh_30d) })),
     model_day: modelDay.map((r) => ({ t: r.t, string: Number(r.string), gti: num(r.gti), expected_w: num(r.expected_w) })),
     shelly: shelly[0] ? { updated: shelly[0].updated, grid_w: num(shelly[0].grid_w), household_w: num(shelly[0].household_w), out_w: num(shelly[0].out_w), target_w: num(shelly[0].target_w), setpoint_w: num(shelly[0].setpoint_w), ok: shelly[0].ok, enabled: shelly[0].enabled, host: shelly[0].host,
                           limited: shelly[0].limited ?? null, reason: shelly[0].reason ?? null, soc: num(shelly[0].soc), soc_limit: num(shelly[0].soc_limit), max_w: num(shelly[0].max_w) } : null,

@@ -61,3 +61,11 @@ table.heat tr.sel th { color: var(--pv); } table.heat tr.sel td { outline: 1px s
 
 /* Erklärung der Smart-Entscheidung unter den Kacheln */
 .explain { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--soc); background: #1c1f24; border-radius: 4px; font-size: 13px; line-height: 1.5; }
+
+/* Top-Panels: Rangliste je Zeitraum */
+.rankwrap { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.rank { background: #1c1f24; border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+.rank .k { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.rank .row { display: grid; grid-template-columns: 20px 64px 1fr 72px 40px; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.rank .pos { color: var(--muted); } .rank .name { font-weight: 600; } .rank .val { text-align: right; } .rank .pct { text-align: right; color: var(--muted); font-size: 12px; }
+.rank .bar { height: 8px; background: #26292d; border-radius: 4px; overflow: hidden; } .rank .bar span { display: block; height: 100%; border-radius: 4px; }
