@@ -16,6 +16,7 @@ const X = {
     offGrid: " The house ({house}) draws {grid} from the grid.",
     unreachable: "Shelly unreachable: the controller cannot measure the grid and holds {target} as the safe value.",
     offline: "NEXA offline: no data from the dongle, the house ({house}) runs entirely on grid power.",
+    wrongMode: "The NEXA is in “{mode}” and keeps all solar ({pv}) for the battery ({soc} %); the house ({house}) runs on grid power. Smart control needs “Load first”: the controller has written the slot mode back, the NEXA should follow within a minute.",
     batteryLow: "Battery at {soc} %, at the discharge limit ({lim} %): the NEXA charges first ({bat} from solar) and delivers nothing to the house, so the house ({house}) runs on grid power. The controller asks for {target} and waits until the pack is about 5 % above the limit.",
     limited: "The NEXA delivers {out} instead of the requested {target}, the house ({house}) draws {grid} from the grid. The controller holds the target just above the output until the NEXA follows again.",
     atMax: "The house needs {house}, more than the NEXA may deliver (max. {max}): it gives {out}, the remaining {grid} comes from the grid.",
@@ -34,6 +35,7 @@ const X = {
     offGrid: " Das Haus ({house}) holt {grid} aus dem Netz.",
     unreachable: "Shelly nicht erreichbar: der Regler kann den Netzbezug nicht messen und hält {target} als Sicherheitswert.",
     offline: "NEXA offline: der Dongle liefert keine Daten, das Haus ({house}) wird komplett aus dem Netz versorgt.",
+    wrongMode: "Der NEXA steht auf „{mode}“ und behält alle Solarleistung ({pv}) für die Batterie ({soc} %); das Haus ({house}) läuft aus dem Netz. Die Smart-Regelung braucht „Last zuerst“: der Regler hat den Slot-Modus zurückgeschrieben, der NEXA sollte binnen einer Minute folgen.",
     batteryLow: "Batterie bei {soc} % und damit an der Entladegrenze ({lim} %): der NEXA lädt zuerst ({bat} aus Solar) und gibt nichts ans Haus ab, das Haus ({house}) kommt aus dem Netz. Der Regler fordert {target} an und wartet, bis der Akku etwa 5 % über der Grenze liegt.",
     limited: "Der NEXA liefert {out} statt der angeforderten {target}, das Haus ({house}) holt {grid} aus dem Netz. Der Regler hält das Ziel knapp über dem Ausgang, bis der NEXA wieder folgt.",
     atMax: "Das Haus braucht {house}, mehr als der NEXA darf (max. {max}): er gibt {out} ab, die restlichen {grid} kommen aus dem Netz.",
@@ -61,6 +63,7 @@ export function explainSmart(lang: "en" | "de", d: ExplainInput, fmtW: (w: numbe
   if (!sh || !sh.enabled) return fill(acIn ? x.offAc : x.off, m) + (d.live && grid != null && grid > 0 ? fill(x.offGrid, m) : "");
   if (sh.ok === false || sh.reason === "shelly_unreachable") return fill(x.unreachable, m);
   if (sh.reason === "device_offline") return fill(x.offline, m);
+  if (sh.reason === "wrong_mode") return fill(x.wrongMode, m);
   if (sh.reason === "battery_low") return fill(x.batteryLow, m);
   if (sh.limited || sh.reason === "device_limited") return fill(x.limited, m) + tail;
   if (!d.live || grid == null) return fill(x.noMeter, m) + tail;
