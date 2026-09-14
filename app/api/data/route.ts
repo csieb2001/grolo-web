@@ -36,20 +36,22 @@ export async function GET(req: NextRequest) {
       SELECT date_trunc('minute', ts AT TIME ZONE ${TZ}) AS bucket_ts, avg(pv_w) AS pv, avg(out_w) AS outw, avg(bat_w) AS bat, avg(grid_w) AS grid, avg(house_w) AS house
       FROM samples WHERE ts > now() - interval '31 days' GROUP BY 1)
     SELECT to_char(bucket_ts::date, 'YYYY-MM-DD') AS day,
-           sum(pv) / 60000.0 AS pv_kwh, sum(outw) / 60000.0 AS out_kwh,
+           sum(pv) / 60000.0 AS pv_kwh, sum(greatest(outw, 0)) / 60000.0 AS out_kwh, sum(greatest(-outw, 0)) / 60000.0 AS acin_kwh,
+           sum(least(pv, greatest(outw, 0))) / 60000.0 AS direct_kwh,
            sum(greatest(bat, 0)) / 60000.0 AS charge_kwh, sum(greatest(-bat, 0)) / 60000.0 AS discharge_kwh,
            sum(greatest(grid, 0)) / 60000.0 AS grid_kwh, sum(greatest(-grid, 0)) / 60000.0 AS feedin_kwh, sum(house) / 60000.0 AS house_kwh
     FROM mins GROUP BY 1 ORDER BY 1`;
 
   const totals = await sql`
     WITH mins AS (SELECT date_trunc('minute', ts) AS bucket_ts, avg(pv_w) AS pv, avg(out_w) AS outw FROM samples GROUP BY 1)
-    SELECT sum(pv) / 60000.0 AS pv_kwh, sum(outw) / 60000.0 AS out_kwh, min(bucket_ts) AS since FROM mins`;
+    SELECT sum(pv) / 60000.0 AS pv_kwh, sum(greatest(outw, 0)) / 60000.0 AS out_kwh, min(bucket_ts) AS since FROM mins`;
 
   // Zeiträume für Ersparnis und Netzkosten: seit Monats- und Jahresbeginn (lokale Zeit) und gesamt, aus Minutenmitteln
   const periods = await sql`
     WITH mins AS (SELECT date_trunc('minute', ts) AS m, avg(out_w) AS outw, avg(grid_w) AS grid FROM samples GROUP BY 1),
     b AS (SELECT (date_trunc('month', now() AT TIME ZONE ${TZ}) AT TIME ZONE ${TZ}) AS ms, (date_trunc('year', now() AT TIME ZONE ${TZ}) AT TIME ZONE ${TZ}) AS ys)
-    SELECT sum(outw) FILTER (WHERE m >= b.ms) / 60000.0 AS out_month, sum(outw) FILTER (WHERE m >= b.ys) / 60000.0 AS out_year, sum(outw) / 60000.0 AS out_total,
+    SELECT sum(greatest(outw, 0)) FILTER (WHERE m >= b.ms) / 60000.0 AS out_month, sum(greatest(outw, 0)) FILTER (WHERE m >= b.ys) / 60000.0 AS out_year, sum(greatest(outw, 0)) / 60000.0 AS out_total,
+           sum(greatest(-outw, 0)) FILTER (WHERE m >= b.ms) / 60000.0 AS acin_month, sum(greatest(-outw, 0)) FILTER (WHERE m >= b.ys) / 60000.0 AS acin_year, sum(greatest(-outw, 0)) / 60000.0 AS acin_total,
            sum(greatest(grid, 0)) FILTER (WHERE m >= b.ms) / 60000.0 AS grid_month, sum(greatest(grid, 0)) FILTER (WHERE m >= b.ys) / 60000.0 AS grid_year, sum(greatest(grid, 0)) / 60000.0 AS grid_total,
            sum(greatest(-grid, 0)) FILTER (WHERE m >= b.ms) / 60000.0 AS feedin_month, sum(greatest(-grid, 0)) FILTER (WHERE m >= b.ys) / 60000.0 AS feedin_year, sum(greatest(-grid, 0)) / 60000.0 AS feedin_total,
            count(DISTINCT (m AT TIME ZONE ${TZ})::date) AS days, min(m) AS since
@@ -131,15 +133,15 @@ export async function GET(req: NextRequest) {
                   temp_sys: num(l.temp_sys), temp_bat1: num(l.temp_bat1), temp_bat2: num(l.temp_bat2), pv_v: l.pv_v, pv_a: l.pv_a, packs: num(l.packs), status: l.status, mode: l.mode } : null,
     info: info[0] ? { ...(info[0].info as object), updated: info[0].updated } : null,
     series: series.map((r) => ({ t: r.t, pv: num(r.pv), out: num(r.out), bat: num(r.bat), soc: num(r.soc) })),
-    daily: daily.map((d) => ({ day: d.day, pv_kwh: num(d.pv_kwh), out_kwh: num(d.out_kwh), charge_kwh: num(d.charge_kwh), discharge_kwh: num(d.discharge_kwh),
+    daily: daily.map((d) => ({ day: d.day, pv_kwh: num(d.pv_kwh), out_kwh: num(d.out_kwh), acin_kwh: num(d.acin_kwh), direct_kwh: num(d.direct_kwh), charge_kwh: num(d.charge_kwh), discharge_kwh: num(d.discharge_kwh),
                                grid_kwh: num(d.grid_kwh), feedin_kwh: num(d.feedin_kwh), house_kwh: num(d.house_kwh) })),
-    today: todayRow ? { pv_kwh: num(todayRow.pv_kwh), out_kwh: num(todayRow.out_kwh), charge_kwh: num(todayRow.charge_kwh), discharge_kwh: num(todayRow.discharge_kwh),
+    today: todayRow ? { pv_kwh: num(todayRow.pv_kwh), out_kwh: num(todayRow.out_kwh), acin_kwh: num(todayRow.acin_kwh), direct_kwh: num(todayRow.direct_kwh), charge_kwh: num(todayRow.charge_kwh), discharge_kwh: num(todayRow.discharge_kwh),
                         grid_kwh: num(todayRow.grid_kwh), feedin_kwh: num(todayRow.feedin_kwh), house_kwh: num(todayRow.house_kwh) } : null,
     totals: totals[0] ? { pv_kwh: num(totals[0].pv_kwh), out_kwh: num(totals[0].out_kwh), since: totals[0].since } : null,
     periods: periods[0] ? {
-      month: { out_kwh: num(periods[0].out_month), grid_kwh: num(periods[0].grid_month), feedin_kwh: num(periods[0].feedin_month) },
-      year: { out_kwh: num(periods[0].out_year), grid_kwh: num(periods[0].grid_year), feedin_kwh: num(periods[0].feedin_year) },
-      total: { out_kwh: num(periods[0].out_total), grid_kwh: num(periods[0].grid_total), feedin_kwh: num(periods[0].feedin_total), days: Number(periods[0].days), since: periods[0].since },
+      month: { out_kwh: num(periods[0].out_month), acin_kwh: num(periods[0].acin_month), grid_kwh: num(periods[0].grid_month), feedin_kwh: num(periods[0].feedin_month) },
+      year: { out_kwh: num(periods[0].out_year), acin_kwh: num(periods[0].acin_year), grid_kwh: num(periods[0].grid_year), feedin_kwh: num(periods[0].feedin_year) },
+      total: { out_kwh: num(periods[0].out_total), acin_kwh: num(periods[0].acin_total), grid_kwh: num(periods[0].grid_total), feedin_kwh: num(periods[0].feedin_total), days: Number(periods[0].days), since: periods[0].since },
     } : null,
     tariff: tariff[0] ? { price_ct_kwh: num(tariff[0].price_ct_kwh), feedin_ct_kwh: num(tariff[0].feedin_ct_kwh) ?? 0, system_cost_eur: num(tariff[0].system_cost_eur) ?? 0, currency: tariff[0].currency || "EUR", updated: tariff[0].updated } : null,
     site: site[0] ? { name: site[0].name, lat: num(site[0].lat), lon: num(site[0].lon), strings: site[0].strings || {}, fit: site[0].fit || null, advice: site[0].advice || null, assumed: site[0].assumed || {}, updated: site[0].updated } : null,

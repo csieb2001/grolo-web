@@ -4,7 +4,7 @@
 // Knoten mit Symbol, Live-Leistung je Verbindung, animierte Punkte in Flussrichtung, Geschwindigkeit nach Leistung.
 // Alle Leistungen in W: pv, out (NEXA → Haus), bat (+ laden / − entladen), grid (+ Bezug / − Einspeisung), house (Shelly).
 
-export type FlowLabels = { solar: string; battery: string; home: string; grid: string; nexa: string; noGrid: string; self: string; charging: string; discharging: string; idle: string; socLimit: string };
+export type FlowLabels = { solar: string; battery: string; home: string; grid: string; nexa: string; noGrid: string; self: string; charging: string; discharging: string; idle: string; socLimit: string; acIn: string };
 export type FlowProps = {
   pv: number | null; out: number | null; bat: number | null; soc: number | null; grid?: number | null; house?: number | null;
   packs?: number | null; socLimit?: number | null; limited?: boolean | null; siteName?: string | null; labels: FlowLabels; fmtW: (w: number | null | undefined) => string;
@@ -17,8 +17,9 @@ const speed = (w: number | null | undefined) => { const a = Math.abs(w ?? 0); re
 
 export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, limited, siteName, labels, fmtW }: FlowProps) {
   const hasGrid = grid != null;
-  const homeW = house ?? (out != null ? out + Math.max(0, grid ?? 0) : null);
-  const self = homeW && homeW > 0 && out != null ? Math.max(0, Math.min(100, out / homeW * 100)) : null;
+  const acIn = (out ?? 0) < -2;   // Register 116 negativ: der NEXA zieht Leistung aus dem Netz (AC-Laden, z. B. Batterie zuerst)
+  const homeW = house ?? (out != null && !acIn ? out + Math.max(0, grid ?? 0) : null);
+  const self = homeW && homeW > 0 && out != null && !acIn ? Math.max(0, Math.min(100, out / homeW * 100)) : null;
   const gridDraw = (grid ?? 0) > 0;
   const socPct = soc == null ? 0 : Math.max(0, Math.min(100, soc));
   const socColor = socPct <= (socLimit ?? 8) + 2 ? C.red : socPct < 30 ? C.house : C.bat;
@@ -52,7 +53,7 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
     <svg className="flow" viewBox="0 0 440 320" role="img" aria-label="power flow">
       {/* Kanten unter den Knoten: Solar → NEXA, NEXA → Haus, Netz ↔ Haus */}
       <Edge d="M85 92 L85 200" w={pv} color={C.pv} />
-      <Edge d="M160 222 C 176 222, 182 200, 193 192" w={out} color={C.house} />
+      <Edge d="M160 222 C 176 222, 182 200, 193 192" w={out} color={acIn ? C.grid : C.house} rev={acIn} />
       {hasGrid
         ? <Edge d="M333 170 L263 170" w={grid} color={gridDraw ? C.grid : C.bat} rev={!gridDraw} />
         : <path className="base" d="M263 170 L333 170" opacity="0.3" />}
@@ -75,7 +76,7 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
         <text className="ns" y="22" textAnchor="middle" fill={bat != null && Math.abs(bat) > 2 ? (bat > 0 ? C.bat : C.house) : C.muted}>
           {bat == null ? "" : `${bat > 2 ? "▲ " : bat < -2 ? "▼ " : ""}${fmtW(Math.abs(bat))} ${batState}`}
         </text>
-        <text className="ns" y="38" textAnchor="middle" fill={C.house}>→ {labels.home}: {fmtW(out)}</text>
+        <text className="ns" y="38" textAnchor="middle" fill={acIn ? C.grid : C.house}>{acIn ? `← ${labels.acIn}: ${fmtW(-(out ?? 0))}` : `→ ${labels.home}: ${fmtW(out)}`}</text>
       </g>
 
       {/* Haus (Mitte) mit Standortname */}
