@@ -13,6 +13,7 @@ const X = {
     off: "Smart control is off. The NEXA runs in “{mode}” with the slot power set by hand and delivers {out}.",
     offAc: "Smart control is off. The NEXA runs in “{mode}” and charges the battery ({soc} %) with {acin} from the grid plus {pv} solar; the house gets nothing from it right now.",
     acTail: " In addition it draws {acin} from the grid into the battery.",
+    offGrid: " The house ({house}) draws {grid} from the grid.",
     unreachable: "Shelly unreachable: the controller cannot measure the grid and holds {target} as the safe value.",
     offline: "NEXA offline: no data from the dongle, the house ({house}) runs entirely on grid power.",
     batteryLow: "Battery at {soc} %, at the discharge limit ({lim} %): the NEXA charges first ({bat} from solar) and delivers nothing to the house, so the house ({house}) runs on grid power. The controller asks for {target} and waits until the pack is about 5 % above the limit.",
@@ -30,6 +31,7 @@ const X = {
     off: "Smart-Regelung ist aus. Der NEXA läuft im Modus „{mode}“ mit der von Hand gesetzten Slot-Leistung und gibt {out} ab.",
     offAc: "Smart-Regelung ist aus. Der NEXA läuft im Modus „{mode}“ und lädt die Batterie ({soc} %) mit {acin} aus dem Netz plus {pv} Solar; das Haus bekommt gerade nichts von ihm.",
     acTail: " Zusätzlich zieht er {acin} aus dem Netz in die Batterie.",
+    offGrid: " Das Haus ({house}) holt {grid} aus dem Netz.",
     unreachable: "Shelly nicht erreichbar: der Regler kann den Netzbezug nicht messen und hält {target} als Sicherheitswert.",
     offline: "NEXA offline: der Dongle liefert keine Daten, das Haus ({house}) wird komplett aus dem Netz versorgt.",
     batteryLow: "Batterie bei {soc} % und damit an der Entladegrenze ({lim} %): der NEXA lädt zuerst ({bat} aus Solar) und gibt nichts ans Haus ab, das Haus ({house}) kommt aus dem Netz. Der Regler fordert {target} an und wartet, bis der Akku etwa 5 % über der Grenze liegt.",
@@ -56,7 +58,7 @@ export function explainSmart(lang: "en" | "de", d: ExplainInput, fmtW: (w: numbe
   const m = { mode: d.mode, out: fmtW(Math.max(0, out)), acin: fmtW(-out), target: fmtW(target), house: fmtW(house), grid: fmtW(grid == null ? null : Math.abs(grid)), soc: pct(soc), lim: pct(lim),
               bat: fmtW(Math.abs(bat)), pv: fmtW(d.pv), setpoint: fmtW(setpoint), max: fmtW(max) };
   const tail = acIn ? fill(x.acTail, m) : bat > 2 ? fill(x.charging, m) : bat < -2 ? fill(x.discharging, m) : (out > 2 ? fill(x.solarOnly, m) : "");
-  if (!sh || !sh.enabled) return fill(acIn ? x.offAc : x.off, m);
+  if (!sh || !sh.enabled) return fill(acIn ? x.offAc : x.off, m) + (d.live && grid != null && grid > 0 ? fill(x.offGrid, m) : "");
   if (sh.ok === false || sh.reason === "shelly_unreachable") return fill(x.unreachable, m);
   if (sh.reason === "device_offline") return fill(x.offline, m);
   if (sh.reason === "battery_low") return fill(x.batteryLow, m);

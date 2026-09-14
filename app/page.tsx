@@ -114,7 +114,7 @@ export default function Page() {
       </header>
       <main>
         {err && <section style={{ color: "var(--red)" }}>{err}</section>}
-        {(() => { const sh = data?.shelly; const live = sh && sh.enabled && sh.ok && ageSec < 600 && sh.updated && (Date.now() - new Date(sh.updated).getTime()) < 600000; return (
+        {(() => { const sh = data?.shelly; const live = sh && sh.ok && sh.grid_w != null && ageSec < 600 && sh.updated && (Date.now() - new Date(sh.updated).getTime()) < 600000; return (
         <section><h2>{t.now} <small className="muted" style={{ fontSize: 12, fontWeight: 400 }}>· {t.flow}</small></h2>
           <div className="nowwrap">
             <PowerFlow pv={l?.pv_w ?? null} out={l?.out_w ?? null} bat={l?.bat_w ?? null} soc={l?.soc ?? null} packs={l?.packs ?? null}
