@@ -3,6 +3,7 @@ import { sql, ensureSchema } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;   // Sekunden; große Nachholpuffer des Push-Dienstes brauchen mehr als die 10 s Standard
 
 type WeatherCurrent = { temperature?: number | null; cloud_cover?: number | null; shortwave_radiation?: number | null; direct_radiation?: number | null; diffuse_radiation?: number | null;
   wind_speed?: number | null; weather_code?: number | null; is_day?: number | null; condition_en?: string | null; condition_de?: string | null;
@@ -32,19 +33,24 @@ export async function POST(req: NextRequest) {
   let body: { samples?: Sample[]; info?: Record<string, unknown> & { device?: string }; weather?: Weather; shelly?: ShellyState; tariff?: Tariff };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "bad json" }, { status: 400 }); }
   await ensureSchema();
-  const samples = (body.samples || []).slice(0, 500);
+  // Samples gebündelt einfügen: eine Abfrage je 100 Zeilen statt einer je Zeile (jede Abfrage ist ein HTTP-Roundtrip zu Neon;
+  // einzeln dauerten 200 Zeilen länger als der 20-s-Timeout des Push-Dienstes, der Puffer kam nie leer).
+  const samples = (body.samples || []).slice(0, 500).filter((s) => s.ts && s.device);
+  const COLS = ["ts", "device", "pv_w", "out_w", "bat_w", "soc", "soc1", "soc2", "soc3", "soc4", "temp_sys", "temp_bat1", "temp_bat2", "pv_v", "pv_a", "packs", "status", "mode", "grid_w", "house_w"];
+  const rowOf = (s: Sample) => [s.ts, s.device, s.pv_w, s.out_w, s.bat_w, s.soc, s.soc1 ?? null, s.soc2 ?? null, s.soc3 ?? null, s.soc4 ?? null,
+    s.temp_sys ?? null, s.temp_bat1 ?? null, s.temp_bat2 ?? null, s.pv_v ?? null, s.pv_a ?? null, s.packs ?? null, s.status ?? null, s.mode ?? null, s.grid_w ?? null, s.house_w ?? null];
   let n = 0;
-  for (const s of samples) {
-    if (!s.ts || !s.device) continue;
-    await sql`INSERT INTO samples (ts, device, pv_w, out_w, bat_w, soc, soc1, soc2, soc3, soc4, temp_sys, temp_bat1, temp_bat2, pv_v, pv_a, packs, status, mode, grid_w, house_w)
-      VALUES (${s.ts}, ${s.device}, ${s.pv_w}, ${s.out_w}, ${s.bat_w}, ${s.soc}, ${s.soc1 ?? null}, ${s.soc2 ?? null}, ${s.soc3 ?? null}, ${s.soc4 ?? null},
-              ${s.temp_sys ?? null}, ${s.temp_bat1 ?? null}, ${s.temp_bat2 ?? null}, ${s.pv_v ?? null}, ${s.pv_a ?? null}, ${s.packs ?? null}, ${s.status ?? null}, ${s.mode ?? null},
-              ${s.grid_w ?? null}, ${s.house_w ?? null})
-      ON CONFLICT (device, ts) DO UPDATE SET pv_w = EXCLUDED.pv_w, out_w = EXCLUDED.out_w, bat_w = EXCLUDED.bat_w, soc = EXCLUDED.soc,
-        soc1 = EXCLUDED.soc1, soc2 = EXCLUDED.soc2, soc3 = EXCLUDED.soc3, soc4 = EXCLUDED.soc4, temp_sys = EXCLUDED.temp_sys,
-        temp_bat1 = EXCLUDED.temp_bat1, temp_bat2 = EXCLUDED.temp_bat2, pv_v = EXCLUDED.pv_v, pv_a = EXCLUDED.pv_a, packs = EXCLUDED.packs,
-        status = EXCLUDED.status, mode = EXCLUDED.mode, grid_w = EXCLUDED.grid_w, house_w = EXCLUDED.house_w`;
-    n++;
+  for (let i = 0; i < samples.length; i += 100) {
+    const chunk = samples.slice(i, i + 100);
+    const params: unknown[] = []; const tuples: string[] = [];
+    for (const s of chunk) {
+      const row = rowOf(s);
+      tuples.push("(" + row.map((_, j) => `$${params.length + j + 1}` + (j === 0 ? "::timestamptz" : j === 13 || j === 14 ? "::real[]" : "")).join(", ") + ")");
+      params.push(...row);
+    }
+    const upd = COLS.slice(2).map((c) => `${c} = EXCLUDED.${c}`).join(", ");
+    await sql.query(`INSERT INTO samples (${COLS.join(", ")}) VALUES ${tuples.join(", ")} ON CONFLICT (device, ts) DO UPDATE SET ${upd}`, params);
+    n += chunk.length;
   }
   if (body.info && body.info.device) {
     const { device, ...info } = body.info;
@@ -84,18 +90,20 @@ export async function POST(req: NextRequest) {
       await sql`INSERT INTO site (id, updated, fit) VALUES (1, now(), ${JSON.stringify(w.fit)}::jsonb) ON CONFLICT (id) DO UPDATE SET fit = EXCLUDED.fit`;
       weather++;
     }
-    for (const m of (w.model || []).slice(0, 400)) {
-      if (!m.t || m.string == null) continue;
-      await sql`INSERT INTO pv_model (t, string, gti, expected_w) VALUES (${m.t}, ${m.string}, ${m.gti ?? null}, ${m.expected_w ?? null})
-        ON CONFLICT (t, string) DO UPDATE SET gti = EXCLUDED.gti, expected_w = EXCLUDED.expected_w`;
-      weather++;
+    const model = (w.model || []).slice(0, 400).filter((m) => m.t && m.string != null);
+    for (let i = 0; i < model.length; i += 100) {
+      const chunk = model.slice(i, i + 100); const params: unknown[] = [];
+      const tuples = chunk.map((m) => { const k = params.length; params.push(m.t, m.string, m.gti ?? null, m.expected_w ?? null); return `($${k + 1}::timestamptz, $${k + 2}, $${k + 3}, $${k + 4})`; });
+      await sql.query(`INSERT INTO pv_model (t, string, gti, expected_w) VALUES ${tuples.join(", ")} ON CONFLICT (t, string) DO UPDATE SET gti = EXCLUDED.gti, expected_w = EXCLUDED.expected_w`, params);
+      weather += chunk.length;
     }
-    for (const f of (w.forecast || []).slice(0, 96)) {
-      if (!f.t) continue;
-      await sql`INSERT INTO weather_forecast (t, shortwave_radiation, cloud_cover, temperature, weather_code)
-        VALUES (${f.t}, ${f.shortwave_radiation ?? null}, ${f.cloud_cover ?? null}, ${f.temperature ?? null}, ${f.weather_code ?? null})
-        ON CONFLICT (t) DO UPDATE SET shortwave_radiation = EXCLUDED.shortwave_radiation, cloud_cover = EXCLUDED.cloud_cover, temperature = EXCLUDED.temperature, weather_code = EXCLUDED.weather_code`;
-      weather++;
+    const fc = (w.forecast || []).slice(0, 96).filter((f) => f.t);
+    if (fc.length) {
+      const params: unknown[] = [];
+      const tuples = fc.map((f) => { const k = params.length; params.push(f.t, f.shortwave_radiation ?? null, f.cloud_cover ?? null, f.temperature ?? null, f.weather_code ?? null); return `($${k + 1}::timestamptz, $${k + 2}, $${k + 3}, $${k + 4}, $${k + 5})`; });
+      await sql.query(`INSERT INTO weather_forecast (t, shortwave_radiation, cloud_cover, temperature, weather_code) VALUES ${tuples.join(", ")}
+        ON CONFLICT (t) DO UPDATE SET shortwave_radiation = EXCLUDED.shortwave_radiation, cloud_cover = EXCLUDED.cloud_cover, temperature = EXCLUDED.temperature, weather_code = EXCLUDED.weather_code`, params);
+      weather += fc.length;
     }
   }
   const sh = body.shelly;
