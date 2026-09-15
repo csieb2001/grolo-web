@@ -210,7 +210,7 @@ export default function Page() {
               <div className="muted" style={{ fontSize: 12.5, alignSelf: "center" }}>{t.costsHint}</div>
             </div>
           </section>); })()}
-        {data?.calendar && data.day && <YearCalendar d={data.calendar} lang={lang} today={data.day.today} setYear={setYear}
+        {data?.calendar && data.day && <YearCalendar d={data.calendar} lang={lang} today={data.day.today} setYear={setYear} priceCt={data.tariff?.price_ct_kwh ?? 30}
           setDay={(k) => { setDay(k); document.getElementById("sun-section")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} />}
         {data?.string_rank && data.string_rank.length > 0 && (() => {
           const SC = ["#f2cc0c", "#ff9830", "#8ab8ff", "#b877d9"];
