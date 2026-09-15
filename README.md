@@ -4,7 +4,9 @@ Password-protected live mirror of a Growatt NEXA 2000 balcony battery, hosted on
 [GroLo stack](https://github.com/csieb2001/grolo) pushes cleaned measurements and weather data every 30 s; this app
 stores them in Neon Postgres and renders a live power-flow schema (solar → NEXA/battery → home, grid ↔ home with a Shelly
 meter, animated like the energy-flow screens of the Anker SOLIX or Growatt apps), tiles, charts, daily energy figures and a
-**Costs and savings** section (saved today/month/year/total, grid cost, payback) in English and German.
+**Costs and savings** section (saved today/month/year/total, grid cost, payback), a **Year calendar** (one tile per day coloured
+by PV yield, click opens the day; highlights: strongest/weakest day, highest peak, best self-sufficiency, best month, year so far)
+and a **Top panels** ranking, in English and German.
 
 ```
 GroLo stack (LXC) ── web-push sidecar ──POST /api/ingest (Bearer token)──▶ Vercel ──▶ Neon Postgres
@@ -59,11 +61,12 @@ zero feed-in control runs); `shelly` is the controller state, `tariff` the elect
 `(device, ts)`, `weather.current` is kept as a single row plus a history row per timestamp, `weather.forecast` is upserted per
 hour so newer forecasts overwrite older ones. Tables are created on first use.
 
-`GET /api/data?range=24h|7d|30d&day=YYYY-MM-DD` (cookie required) returns `latest`, `series` (bucketed), `daily` (kWh per day
+`GET /api/data?range=24h|7d|30d&day=YYYY-MM-DD&year=YYYY` (cookie required) returns `latest`, `series` (bucketed), `daily` (kWh per day
 from minute averages, including `grid_kwh`/`feedin_kwh`/`house_kwh` from the Shelly), `today`, `totals`, `periods` (output to
 house, grid import and export since the start of the month and year and in total, with `days` and `since` for the payback
 estimate), `tariff` (price, feed-in rate, system price; the page assumes 30 ct/kWh when missing), `shelly` (controller state
-incl. `reason`), `info`, `weather { current, forecast (next 48 h), history }` and for the strings
+incl. `reason`), `calendar` (daily PV/house/grid/AC-charging kWh, minutes with data, PV peak and its time for every day of the
+selected year, plus the years with data), `string_rank` (kWh per PV input over 24 h, 7 and 30 days), `info`, `weather { current, forecast (next 48 h), history }` and for the strings
 section `site`, `day` (bounds of the selected day, default today), `string_peaks` (daily peak per string, 30 days),
 `strings_day` (5-minute power per string of the selected day), `heat` (hourly mean per string and day, 30 days),
 `model_day` (expected power per string of the selected day) and `alltime` (per string and total: highest 30-second sample

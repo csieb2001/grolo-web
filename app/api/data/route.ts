@@ -119,6 +119,26 @@ export async function GET(req: NextRequest) {
            sum(CASE s WHEN 1 THEN s1 WHEN 2 THEN s2 WHEN 3 THEN s3 ELSE s4 END) FILTER (WHERE m > now() - interval '7 days') / 60000.0 AS kwh_7d,
            sum(CASE s WHEN 1 THEN s1 WHEN 2 THEN s2 WHEN 3 THEN s3 ELSE s4 END) / 60000.0 AS kwh_30d
     FROM mins, generate_series(1, 4) AS s GROUP BY s ORDER BY s`;
+  // Jahreskalender: Tageswerte des gewählten Jahres (Standard: laufendes Jahr) mit PV-Spitze und Uhrzeit, plus vorhandene Jahre
+  const yearParam = Number(req.nextUrl.searchParams.get("year") || "");
+  const year = Number.isInteger(yearParam) && yearParam > 2000 && yearParam < 2100 ? yearParam : Number(todayKey.slice(0, 4));
+  const yStart = `${year}-01-01`, yEnd = `${year + 1}-01-01`;
+  const years = await sql`SELECT DISTINCT extract(year FROM ts AT TIME ZONE ${TZ})::int AS y FROM samples ORDER BY 1`;
+  const calDays = await sql`
+    WITH mins AS (
+      SELECT date_trunc('minute', ts AT TIME ZONE ${TZ}) AS m, avg(pv_w) AS pv, avg(out_w) AS outw, avg(grid_w) AS grid, avg(house_w) AS house
+      FROM samples WHERE ts >= (${yStart}::date::timestamp AT TIME ZONE ${TZ}) AND ts < (${yEnd}::date::timestamp AT TIME ZONE ${TZ}) GROUP BY 1),
+    d AS (
+      SELECT m::date AS day, sum(pv) / 60000.0 AS pv_kwh, sum(greatest(outw, 0)) / 60000.0 AS out_kwh, sum(greatest(-outw, 0)) / 60000.0 AS acin_kwh,
+             sum(greatest(grid, 0)) / 60000.0 AS grid_kwh, sum(house) / 60000.0 AS house_kwh, count(*) AS minutes, max(pv) AS peak_w
+      FROM mins GROUP BY 1),
+    pk AS (
+      SELECT DISTINCT ON (day) day, peak_t FROM (
+        SELECT (ts AT TIME ZONE ${TZ})::date AS day, ts AS peak_t, pv_w
+        FROM samples WHERE ts >= (${yStart}::date::timestamp AT TIME ZONE ${TZ}) AND ts < (${yEnd}::date::timestamp AT TIME ZONE ${TZ})) x
+      ORDER BY day, pv_w DESC)
+    SELECT to_char(d.day, 'YYYY-MM-DD') AS day, d.pv_kwh, d.out_kwh, d.acin_kwh, d.grid_kwh, d.house_kwh, d.minutes, d.peak_w, pk.peak_t
+    FROM d LEFT JOIN pk USING (day) ORDER BY d.day`;
   const modelDay = await sql`SELECT t, string, gti, expected_w FROM pv_model WHERE t >= ${dayBounds[0].start}::timestamptz - interval '1 hour' AND t < ${dayBounds[0].end}::timestamptz + interval '1 hour' ORDER BY t`;
 
   const todayRow = daily.find((d) => d.day === todayKey);
@@ -150,6 +170,7 @@ export async function GET(req: NextRequest) {
     strings_day: stringsDay.map((r) => ({ t: r.t, s1: num(r.s1), s2: num(r.s2), s3: num(r.s3), s4: num(r.s4), pv: num(r.pv) })),
     heat: heat.map((r) => ({ day: String(r.day), hour: Number(r.hour), s1: num(r.s1), s2: num(r.s2), s3: num(r.s3), s4: num(r.s4), pv: num(r.pv) })),
     alltime: { since: a?.since ?? null, days: a ? Number(a.days) : 0, minutes: a ? Number(a.minutes) : 0, total: allOf(0), strings: Object.fromEntries([1, 2, 3, 4].map((i) => [String(i), allOf(i)])) },
+    calendar: { year, years: years.map((r) => Number(r.y)), days: calDays.map((r) => ({ day: String(r.day), pv_kwh: num(r.pv_kwh), out_kwh: num(r.out_kwh), acin_kwh: num(r.acin_kwh), grid_kwh: num(r.grid_kwh), house_kwh: num(r.house_kwh), minutes: Number(r.minutes), peak_w: num(r.peak_w), peak_t: r.peak_t })) },
     string_rank: rank.map((r) => ({ string: Number(r.string), kwh_24h: num(r.kwh_24h), kwh_7d: num(r.kwh_7d), kwh_30d: num(r.kwh_30d) })),
     model_day: modelDay.map((r) => ({ t: r.t, string: Number(r.string), gti: num(r.gti), expected_w: num(r.expected_w) })),
     shelly: shelly[0] ? { updated: shelly[0].updated, grid_w: num(shelly[0].grid_w), household_w: num(shelly[0].household_w), out_w: num(shelly[0].out_w), target_w: num(shelly[0].target_w), setpoint_w: num(shelly[0].setpoint_w), ok: shelly[0].ok, enabled: shelly[0].enabled, host: shelly[0].host,

@@ -4,6 +4,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Legend, Line, Line
 import { SunSection, type SunData } from "./sun";
 import { PowerFlow } from "./flow";
 import { explainSmart } from "./explain";
+import { YearCalendar, type CalData } from "./calendar";
 
 type Data = Partial<SunData> & {
   updated: string | null; device: string | null;
@@ -14,6 +15,7 @@ type Data = Partial<SunData> & {
   today: { pv_kwh: number; out_kwh: number; acin_kwh?: number | null; direct_kwh?: number | null; charge_kwh: number; discharge_kwh: number; grid_kwh?: number | null; feedin_kwh?: number | null; house_kwh?: number | null } | null;
   totals: { pv_kwh: number; out_kwh: number; since: string } | null;
   string_rank?: { string: number; kwh_24h: number | null; kwh_7d: number | null; kwh_30d: number | null }[];
+  calendar?: CalData | null;
   periods?: { month: Period; year: Period; total: Period & { days: number; since: string | null } } | null;
   tariff?: { price_ct_kwh: number | null; feedin_ct_kwh: number; system_cost_eur: number; currency: string; updated: string } | null;
   shelly?: { updated: string; grid_w: number|null; household_w: number|null; out_w: number|null; target_w: number|null; setpoint_w: number|null; ok: boolean|null; enabled: boolean|null; host: string|null;
@@ -70,18 +72,19 @@ export default function Page() {
   const [lang, setLang] = useState<"en" | "de">("en");
   const [range, setRange] = useState<"24h" | "7d" | "30d">("24h");
   const [day, setDay] = useState<string>("");
+  const [year, setYear] = useState<number | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const t = T[lang];
   useEffect(() => { try { const l = localStorage.getItem("grolo.lang"); if (l === "de" || l === "en") setLang(l); } catch {} }, []);
   useEffect(() => {
     let alive = true;
-    const load = () => fetch(`/api/data?range=${range}${day ? `&day=${day}` : ""}`, { cache: "no-store" })
+    const load = () => fetch(`/api/data?range=${range}${day ? `&day=${day}` : ""}${year ? `&year=${year}` : ""}`, { cache: "no-store" })
       .then(r => { if (r.status === 401) { window.location.href = "/login"; throw new Error("401"); } if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
       .then(d => { if (alive) { setData(d); setErr(null); } })
       .catch(e => alive && setErr(`${T[lang].apierr} (${e instanceof Error ? e.message : String(e)})`));
     load(); const id = setInterval(load, 30000); return () => { alive = false; clearInterval(id); };
-  }, [range, lang, day]);
+  }, [range, lang, day, year]);
   const locale = lang === "de" ? "de-DE" : "en-GB";
   const ageSec = data?.updated ? (Date.now() - new Date(data.updated).getTime()) / 1000 : Infinity;
   const l = data?.latest;
@@ -207,6 +210,8 @@ export default function Page() {
               <div className="muted" style={{ fontSize: 12.5, alignSelf: "center" }}>{t.costsHint}</div>
             </div>
           </section>); })()}
+        {data?.calendar && data.day && <YearCalendar d={data.calendar} lang={lang} today={data.day.today} setYear={setYear}
+          setDay={(k) => { setDay(k); document.getElementById("sun-section")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} />}
         {data?.string_rank && data.string_rank.length > 0 && (() => {
           const SC = ["#f2cc0c", "#ff9830", "#8ab8ff", "#b877d9"];
           const wins: { key: "kwh_24h" | "kwh_7d" | "kwh_30d"; label: string }[] = [{ key: "kwh_24h", label: t.range["24h"] }, { key: "kwh_7d", label: t.range["7d"] }, { key: "kwh_30d", label: t.range["30d"] }];
@@ -226,6 +231,7 @@ export default function Page() {
               })}
             </div>
           </section>); })()}
+        {data?.day && <div id="sun-section" />}
         {data?.day && <SunSection lang={lang} setDay={setDay} fmtDate={(iso) => new Date(iso).toLocaleDateString(locale, { day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" })}
           d={{ site: data.site ?? null, day: data.day, string_peaks: data.string_peaks ?? [], strings_day: data.strings_day ?? [], heat: data.heat ?? [], model_day: data.model_day ?? [], alltime: data.alltime ?? null }} />}
         <section><h2>{t.weather}</h2>

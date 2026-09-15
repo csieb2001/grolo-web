@@ -69,3 +69,15 @@ table.heat tr.sel th { color: var(--pv); } table.heat tr.sel td { outline: 1px s
 .rank .row { display: grid; grid-template-columns: 20px 64px 1fr 72px 40px; align-items: center; gap: 8px; padding: 4px 0; font-size: 13px; font-variant-numeric: tabular-nums; }
 .rank .pos { color: var(--muted); } .rank .name { font-weight: 600; } .rank .val { text-align: right; } .rank .pct { text-align: right; color: var(--muted); font-size: 12px; }
 .rank .bar { height: 8px; background: #26292d; border-radius: 4px; overflow: hidden; } .rank .bar span { display: block; height: 100%; border-radius: 4px; }
+
+/* Jahreskalender */
+.calgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px 16px; margin-top: 12px; }
+.calmonth .calname { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.calwd { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; font-size: 9.5px; color: var(--muted); text-align: center; margin-bottom: 2px; }
+.caldays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.calday { aspect-ratio: 1; border: 1px solid transparent; border-radius: 3px; font-size: 9.5px; color: rgba(216,217,218,.75); padding: 0; cursor: default; line-height: 1; }
+.calday.has { cursor: pointer; color: #111; font-weight: 600; } .calday.has:hover { outline: 1px solid var(--text); }
+.calday.today { border-color: var(--soc); }
+.callegend { font-size: 11.5px; margin-top: 8px; display: flex; align-items: center; gap: 6px; }
+.calscale { display: inline-block; width: 90px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, rgba(242,204,12,.12), rgba(242,204,12,1)); }
+.calh3 { margin: 16px 0 8px; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
