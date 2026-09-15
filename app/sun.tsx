@@ -43,7 +43,10 @@ const L = {
         advSameAz: "Same direction, tilt", advVertical: "Vertical (balcony) facing", advFlat: "Flat", advWinter: "winter share", advLever: "Biggest lever", advFine: "Orientation is close to the optimum, nothing to gain by moving the panels.",
         advShade: "Shading", advShadeText: "between {from} and {to} (sun at {a}–{b}°) only {r} % of the expected power, loss about {loss} % of the sunny-hour energy. Look for an obstacle in that direction.",
         advNoShade: "No recurring shading found in the last 30 days.", advNoBasis: "Orientation unknown, enter it on the settings page or wait for the estimate.", advFree: "{n} of 4 inputs free: another string, e.g. facing {dir}, would use them.",
-        advFewData: "shading check needs more sunny hours", advPeriod: "Year model" },
+        advFewData: "shading check needs more sunny hours", advPeriod: "Year model",
+        tipDay: "click: select this day", tipTime: "click: set the time", tipString: "click: show this string in the all-time tile", tipPlay: "click: play / pause the day",
+        pathSel: "Sun path of the selected day", pathSummer: "Sun path 21 June (longest day)", pathWinter: "Sun path 21 December (shortest day)", pathEquinox: "Sun path at the equinox",
+        panelCfg: "panel orientation (configured)", panelFit: "panel orientation (estimated from measurements)", facing: "facing", peakOf: "daily peak" },
   de: { title: "Strings und Sonne", peakToday: "Spitze", at: "um", free: "frei", noPeak: "noch keine Spitze", sunpath: "Sonnenbahn und Tagesspitzen", legendPeaks: "Punkt = Tagesspitze eines Strings (Größe = Leistung), Quadrat = Modulausrichtung",
         solstice: "21. Jun", winter: "21. Dez", equinox: "Tagundnachtgleiche", selected: "gewählter Tag", sunNow: "Sonne", azimuth: "Azimut", elevation: "Höhe", belowHorizon: "unter dem Horizont",
         play: "Tag abspielen", pause: "Pause", now: "Jetzt", prev: "Vortag", next: "Folgetag", today: "heute", noLocation: "Noch kein Standort. Auf der GroLo-Einstellungsseite (Standort und Module) den Ort wählen, dann erscheint hier die Sonnenbahn.",
@@ -59,7 +62,10 @@ const L = {
         advSameAz: "Gleiche Richtung, Neigung", advVertical: "Senkrecht (Balkon) nach", advFlat: "Flach", advWinter: "Winteranteil", advLever: "Größter Hebel", advFine: "Die Ausrichtung liegt nahe am Optimum, Umbauen bringt nichts.",
         advShade: "Verschattung", advShadeText: "zwischen {from} und {to} Uhr (Sonne bei {a}–{b}°) nur {r} % der erwarteten Leistung, Verlust etwa {loss} % der Sonnenstunden-Energie. In dieser Richtung nach einem Hindernis schauen.",
         advNoShade: "Keine wiederkehrende Verschattung in den letzten 30 Tagen gefunden.", advNoBasis: "Ausrichtung unbekannt, auf der Einstellungsseite eintragen oder die Schätzung abwarten.", advFree: "{n} von 4 Eingängen frei: ein weiterer String, z. B. nach {dir}, würde sie nutzen.",
-        advFewData: "Verschattungsprüfung braucht mehr Sonnenstunden", advPeriod: "Jahresmodell" },
+        advFewData: "Verschattungsprüfung braucht mehr Sonnenstunden", advPeriod: "Jahresmodell",
+        tipDay: "Klick: diesen Tag auswählen", tipTime: "Klick: Uhrzeit setzen", tipString: "Klick: diesen String in der Allzeit-Kachel zeigen", tipPlay: "Klick: Tag abspielen / Pause",
+        pathSel: "Sonnenbahn des gewählten Tages", pathSummer: "Sonnenbahn 21. Juni (längster Tag)", pathWinter: "Sonnenbahn 21. Dezember (kürzester Tag)", pathEquinox: "Sonnenbahn zur Tagundnachtgleiche",
+        panelCfg: "Modulausrichtung (konfiguriert)", panelFit: "Modulausrichtung (aus Messdaten geschätzt)", facing: "Richtung", peakOf: "Tagesspitze" },
 };
 
 const fmtW = (w: number | null | undefined) => w == null ? "–" : Math.abs(w) < 1000 ? `${w.toFixed(0)} W` : `${(w / 1000).toFixed(2)} kW`;
@@ -76,7 +82,12 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
   const [minute, setMinute] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => { setMinute(null); setPlaying(false); }, [d.day.key]);
+  const pendingMinute = useRef<number | null>(null);
+  useEffect(() => { setMinute(pendingMinute.current); pendingMinute.current = null; setPlaying(false); }, [d.day.key]);
+  // ---- Tooltip im Sonnenbahn-Diagramm (SVG-Koordinaten) und Klick-Aktionen
+  const [tip, setTip] = useState<{ x: number; y: number; lines: string[] } | null>(null);
+  const svgPoint = (e: React.MouseEvent<SVGElement>) => { const svg = (e.currentTarget as SVGElement).ownerSVGElement ?? (e.currentTarget as unknown as SVGSVGElement); const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const m = svg.getScreenCTM(); return m ? pt.matrixTransform(m.inverse()) : { x: 0, y: 0 }; };
+  const minuteOf = (ms: number) => Math.max(0, Math.min(1435, Math.round((ms - dayStart) / 60000 / 5) * 5));
   useEffect(() => {
     if (!playing) { if (timer.current) clearInterval(timer.current); timer.current = null; return; }
     timer.current = setInterval(() => setMinute((m) => { const n = (m ?? 240) + 5; if (n >= 1440) { setPlaying(false); return 1435; } return n; }), 120);
@@ -229,21 +240,35 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
               {[30, 60].map((el) => <text key={el} x={cx + 3} y={cy - (R * (90 - el)) / 90 - 3} fill="#5d6368" fontSize="9">{el}°</text>)}
               <line x1={cx} y1={cy - R} x2={cx} y2={cy + R} stroke="#2c3235" /><line x1={cx - R} y1={cy} x2={cx + R} y2={cy} stroke="#2c3235" />
               {dirs.map((n, k) => { const a = k * 90; const p = polar(a, -6, cx, cy, R); return <text key={n} x={p.x} y={p.y + 4} textAnchor="middle" fill="#8e8e8e" fontSize="12" fontWeight={600}>{n}</text>; })}
-              <polyline points={poly(paths.summer)} fill="none" stroke="#6b7078" strokeDasharray="5 4" strokeWidth={1} />
-              <polyline points={poly(paths.winter)} fill="none" stroke="#6b7078" strokeDasharray="5 4" strokeWidth={1} />
-              <polyline points={poly(paths.equinox)} fill="none" stroke="#4d5259" strokeDasharray="2 3" strokeWidth={1} />
+              {([["summer", t.pathSummer, "#6b7078", "5 4"], ["winter", t.pathWinter, "#6b7078", "5 4"], ["equinox", t.pathEquinox, "#4d5259", "2 3"]] as const).map(([k, label, col, dash]) => (
+                <g key={k}><polyline points={poly(paths[k])} fill="none" stroke={col} strokeDasharray={dash} strokeWidth={1} />
+                  <polyline className="hit" points={poly(paths[k])} fill="none" stroke="transparent" strokeWidth={10} onMouseMove={(e) => { const q = svgPoint(e); setTip({ x: q.x, y: q.y, lines: [label] }); }} onMouseLeave={() => setTip(null)} /></g>))}
               <polyline points={poly(paths.selPts)} fill="none" stroke="#f2cc0c" strokeWidth={1.8} opacity={0.9} />
+              <polyline className="hit" points={poly(paths.selPts)} fill="none" stroke="transparent" strokeWidth={14}
+                onMouseMove={(e) => { const q = svgPoint(e); let bi = 0, bd = Infinity; paths.selPts.forEach((pt, i) => { const dd = (pt.x - q.x) ** 2 + (pt.y - q.y) ** 2; if (dd < bd) { bd = dd; bi = i; } }); const sp = paths.sel[bi];
+                  setTip({ x: paths.selPts[bi].x, y: paths.selPts[bi].y, lines: [t.pathSel, `${fmtTime(sp.ms)} · ${t.azimuth} ${sp.azimuth.toFixed(0)}° (${compass(sp.azimuth, lang)}) · ${t.elevation} ${sp.elevation.toFixed(0)}°`, t.tipTime] }); }}
+                onMouseLeave={() => setTip(null)}
+                onClick={(e) => { const q = svgPoint(e); let bi = 0, bd = Infinity; paths.selPts.forEach((pt, i) => { const dd = (pt.x - q.x) ** 2 + (pt.y - q.y) ** 2; if (dd < bd) { bd = dd; bi = i; } }); setPlaying(false); setMinute(minuteOf(paths.sel[bi].ms)); }} />
               {paths.sel.filter((p) => new Date(p.ms).getUTCMinutes() === 0 && p.elevation > 0).map((p) => { const q = polar(p.azimuth, p.elevation, cx, cy, R); const h = Number(new Date(p.ms).toLocaleTimeString("en-GB", { hour: "2-digit", hour12: false, timeZone: TZ }));
-                return <g key={p.ms}><circle cx={q.x} cy={q.y} r={2} fill="#f2cc0c" />{h % 2 === 0 && <text x={q.x} y={q.y - 5} textAnchor="middle" fill="#c9b04a" fontSize="8">{h}</text>}</g>; })}
+                return <g key={p.ms} className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${fmtTime(p.ms)} · ${t.azimuth} ${p.azimuth.toFixed(0)}° (${compass(p.azimuth, lang)}) · ${t.elevation} ${p.elevation.toFixed(0)}°`, t.tipTime] })} onMouseLeave={() => setTip(null)} onClick={() => { setPlaying(false); setMinute(minuteOf(p.ms)); }}>
+                  <circle cx={q.x} cy={q.y} r={6} fill="transparent" /><circle cx={q.x} cy={q.y} r={2} fill="#f2cc0c" />{h % 2 === 0 && <text x={q.x} y={q.y - 5} textAnchor="middle" fill="#c9b04a" fontSize="8">{h}</text>}</g>; })}
               {strings.map((i) => { const c = cfgOf(i); if (c?.tilt == null || c?.azimuth == null) return null; const q = polar(Number(c.azimuth), 90 - Number(c.tilt), cx, cy, R);
-                return <g key={i}><rect x={q.x - 5} y={q.y - 5} width={10} height={10} fill={STRING_COLORS[i - 1]} stroke="#fff" strokeWidth={1} transform={`rotate(45 ${q.x} ${q.y})`} /><text x={q.x + 8} y={q.y + 4} fill={STRING_COLORS[i - 1]} fontSize="9">S{i}</text><title>{t.string} {i}: {Number(c.azimuth).toFixed(0)}° / {Number(c.tilt).toFixed(0)}°</title></g>; })}
+                return <g key={i} className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${t.string} ${i} · ${t.panelCfg}`, `${t.facing} ${compass(Number(c.azimuth), lang)} ${Number(c.azimuth).toFixed(0)}° · ${t.tilt} ${Number(c.tilt).toFixed(0)}°${c.wp ? ` · ${Number(c.wp).toFixed(0)} Wp` : ""}`, t.tipString] })} onMouseLeave={() => setTip(null)} onClick={() => setAllStr(i as 1 | 2 | 3 | 4)}>
+                  <rect x={q.x - 5} y={q.y - 5} width={10} height={10} fill={STRING_COLORS[i - 1]} stroke="#fff" strokeWidth={1} transform={`rotate(45 ${q.x} ${q.y})`} /><text x={q.x + 8} y={q.y + 4} fill={STRING_COLORS[i - 1]} fontSize="9">S{i}</text></g>; })}
               {strings.map((i) => { const v = d.site?.fit?.strings?.[String(i)]; if (!v || v.status !== "ok" && v.status !== "uncertain" || v.azimuth == null || v.tilt == null) return null; const q = polar(v.azimuth, 90 - v.tilt, cx, cy, R);
-                return <g key={`fit${i}`}><rect x={q.x - 6} y={q.y - 6} width={12} height={12} fill="none" stroke={STRING_COLORS[i - 1]} strokeWidth={1.5} strokeDasharray={v.status === "ok" ? undefined : "2 2"} transform={`rotate(45 ${q.x} ${q.y})`} /><title>{t.fit} {t.string} {i}: {v.azimuth}° / {v.tilt}° (R² {v.r2?.toFixed(2)})</title></g>; })}
-              {peakDots.map((p) => <circle key={`${p.day}-${p.string}`} cx={p.x} cy={p.y} r={2.5 + 6 * ((p.w ?? 0) / maxPeak)} fill={STRING_COLORS[p.string - 1]} fillOpacity={p.day === d.day.key ? 1 : 0.55} stroke={p.day === d.day.key ? "#fff" : "none"} strokeWidth={1}>
-                <title>{t.string} {p.string} · {fmtDate(p.t)} {fmtTime(p.ms)} · {fmtW(p.w)} · {t.azimuth} {p.azimuth.toFixed(0)}°, {t.elevation} {p.elevation.toFixed(0)}°</title></circle>)}
+                return <g key={`fit${i}`} className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${t.string} ${i} · ${t.panelFit}`, `${t.facing} ${compass(v.azimuth!, lang)} ${v.azimuth}° · ${t.tilt} ${v.tilt}° · ${v.wp} Wp · R² ${v.r2?.toFixed(2)} (${v.status === "ok" ? t.fitOk : t.fitUncertain})`, t.tipString] })} onMouseLeave={() => setTip(null)} onClick={() => setAllStr(i as 1 | 2 | 3 | 4)}>
+                  <rect x={q.x - 6} y={q.y - 6} width={12} height={12} fill="none" stroke={STRING_COLORS[i - 1]} strokeWidth={1.5} strokeDasharray={v.status === "ok" ? undefined : "2 2"} transform={`rotate(45 ${q.x} ${q.y})`} /></g>; })}
+              {peakDots.map((p) => <circle key={`${p.day}-${p.string}`} className="hit" cx={p.x} cy={p.y} r={Math.max(4, 2.5 + 6 * ((p.w ?? 0) / maxPeak))} fill={STRING_COLORS[p.string - 1]} fillOpacity={p.day === d.day.key ? 1 : 0.55} stroke={p.day === d.day.key ? "#fff" : "none"} strokeWidth={1}
+                onMouseEnter={() => setTip({ x: p.x, y: p.y, lines: [`${t.string} ${p.string} · ${t.peakOf} ${fmtDate(p.t)} ${fmtTime(p.ms)}`, `${fmtW(p.w)} · ${t.azimuth} ${p.azimuth.toFixed(0)}° (${compass(p.azimuth, lang)}) · ${t.elevation} ${p.elevation.toFixed(0)}°`, p.day === d.day.key ? t.tipTime : t.tipDay] })} onMouseLeave={() => setTip(null)}
+                onClick={() => { setPlaying(false); if (p.day === d.day.key) setMinute(minuteOf(p.ms)); else { pendingMinute.current = minuteOf(p.ms); setDay(p.day); } }} />)}
               {sun && (() => { const q = polar(sun.azimuth, sun.elevation, cx, cy, R); const up = sun.elevation > 0; return (
-                <g><circle cx={q.x} cy={q.y} r={up ? 9 : 6} fill={up ? "#ffe066" : "#3a3f46"} stroke={up ? "#fff3b0" : "#5d6368"} strokeWidth={1.5} filter={up ? "url(#glow)" : undefined} />
-                  <title>{t.sunNow} {fmtTime(curMs)}: {t.azimuth} {sun.azimuth.toFixed(0)}° ({compass(sun.azimuth, lang)}), {t.elevation} {sun.elevation.toFixed(1)}°</title></g>); })()}
+                <g className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${t.sunNow} ${fmtTime(curMs)}${up ? "" : ` · ${t.belowHorizon}`}`, `${t.azimuth} ${sun.azimuth.toFixed(0)}° (${compass(sun.azimuth, lang)}) · ${t.elevation} ${sun.elevation.toFixed(1)}°`, t.tipPlay] })} onMouseLeave={() => setTip(null)}
+                   onClick={() => { if (!playing && (minute == null || minute >= 1435)) setMinute(240); setPlaying(!playing); }}>
+                  <circle cx={q.x} cy={q.y} r={up ? 9 : 6} fill={up ? "#ffe066" : "#3a3f46"} stroke={up ? "#fff3b0" : "#5d6368"} strokeWidth={1.5} filter={up ? "url(#glow)" : undefined} /></g>); })()}
+              {tip && (() => { const w = Math.min(W - 8, Math.max(...tip.lines.map((l) => l.length)) * 5.4 + 14), h = tip.lines.length * 13 + 8;
+                const x = Math.max(4, Math.min(W - w - 4, tip.x - w / 2)), y = tip.y - h - 12 < 4 ? tip.y + 14 : tip.y - h - 12; return (
+                <g pointerEvents="none"><rect x={x} y={y} width={w} height={h} rx={4} fill="#1c1f24" stroke="#444b54" opacity={0.96} />
+                  {tip.lines.map((l, i) => <text key={i} x={x + 7} y={y + 14 + i * 13} fontSize="9.5" fill={i === 0 ? "#d8d9da" : i === tip.lines.length - 1 && tip.lines.length > 1 ? "#8e8e8e" : "#c9cacc"} fontWeight={i === 0 ? 600 : 400}>{l}</text>)}</g>); })()}
             </svg>)}
           <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>— {t.selected} · ╌ {t.solstice} / {t.winter} · ··· {t.equinox} · {t.legendPeaks} · {t.legendFit}</div>
         </div>

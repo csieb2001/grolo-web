@@ -28,6 +28,7 @@ footer { text-align: center; color: var(--muted); font-size: 12px; padding: 0 20
 /* Strings und Sonne */
 .sunwrap { display: grid; grid-template-columns: minmax(280px, 440px) 1fr; gap: 18px; align-items: start; } @media (max-width: 900px) { .sunwrap { grid-template-columns: 1fr; } }
 .sunpath { width: 100%; height: auto; display: block; }
+.sunpath .hit { cursor: pointer; }
 .dayctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
 .dayctl button { background: #2f3540; color: var(--text); border: 1px solid #444b54; border-radius: 4px; padding: 5px 10px; font-size: 13px; cursor: pointer; } .dayctl button.on { background: var(--soc); color: #fff; } .dayctl button:disabled { opacity: .4; cursor: default; }
 input[type=range] { accent-color: var(--pv); }
