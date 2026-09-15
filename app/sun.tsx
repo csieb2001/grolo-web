@@ -46,7 +46,8 @@ const L = {
         advFewData: "shading check needs more sunny hours", advPeriod: "Year model",
         tipDay: "click: select this day", tipTime: "click: set the time", tipString: "click: show this string in the all-time tile", tipPlay: "click: play / pause the day",
         pathSel: "Sun path of the selected day", pathSummer: "Sun path 21 June (longest day)", pathWinter: "Sun path 21 December (shortest day)", pathEquinox: "Sun path at the equinox",
-        panelCfg: "panel orientation (configured)", panelFit: "panel orientation (estimated from measurements)", facing: "facing", peakOf: "daily peak" },
+        panelCfg: "panel orientation (configured)", panelFit: "panel orientation (estimated from measurements)", facing: "facing", peakOf: "daily peak",
+        incidence: "angle of incidence", yieldGeo: "geometric yield", behind: "sun behind the panel", legendAngle: "line = angle sun → panel with geometric yield (cos), thin ring = 60° cone (≥ 50 % yield)" },
   de: { title: "Strings und Sonne", peakToday: "Spitze", at: "um", free: "frei", noPeak: "noch keine Spitze", sunpath: "Sonnenbahn und Tagesspitzen", legendPeaks: "Punkt = Tagesspitze eines Strings (Größe = Leistung), Quadrat = Modulausrichtung",
         solstice: "21. Jun", winter: "21. Dez", equinox: "Tagundnachtgleiche", selected: "gewählter Tag", sunNow: "Sonne", azimuth: "Azimut", elevation: "Höhe", belowHorizon: "unter dem Horizont",
         play: "Tag abspielen", pause: "Pause", now: "Jetzt", prev: "Vortag", next: "Folgetag", today: "heute", noLocation: "Noch kein Standort. Auf der GroLo-Einstellungsseite (Standort und Module) den Ort wählen, dann erscheint hier die Sonnenbahn.",
@@ -65,7 +66,8 @@ const L = {
         advFewData: "Verschattungsprüfung braucht mehr Sonnenstunden", advPeriod: "Jahresmodell",
         tipDay: "Klick: diesen Tag auswählen", tipTime: "Klick: Uhrzeit setzen", tipString: "Klick: diesen String in der Allzeit-Kachel zeigen", tipPlay: "Klick: Tag abspielen / Pause",
         pathSel: "Sonnenbahn des gewählten Tages", pathSummer: "Sonnenbahn 21. Juni (längster Tag)", pathWinter: "Sonnenbahn 21. Dezember (kürzester Tag)", pathEquinox: "Sonnenbahn zur Tagundnachtgleiche",
-        panelCfg: "Modulausrichtung (konfiguriert)", panelFit: "Modulausrichtung (aus Messdaten geschätzt)", facing: "Richtung", peakOf: "Tagesspitze" },
+        panelCfg: "Modulausrichtung (konfiguriert)", panelFit: "Modulausrichtung (aus Messdaten geschätzt)", facing: "Richtung", peakOf: "Tagesspitze",
+        incidence: "Einfallswinkel", yieldGeo: "geometrische Ausbeute", behind: "Sonne hinter dem Modul", legendAngle: "Linie = Winkel Sonne → Modul mit geometrischer Ausbeute (Kosinus), dünner Ring = 60°-Kegel (≥ 50 % Ausbeute)" },
 };
 
 const fmtW = (w: number | null | undefined) => w == null ? "–" : Math.abs(w) < 1000 ? `${w.toFixed(0)} W` : `${(w / 1000).toFixed(2)} kW`;
@@ -133,6 +135,27 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
     return { summer: mk(midnightUtc(5, 21)), winter: mk(midnightUtc(11, 21)), equinox: mk(midnightUtc(2, 20)), sel, selPts: sel.map((p) => polar(p.azimuth, p.elevation, cx, cy, R)) };
   }, [lat, lon, dayStart, year]);
   const poly = (pts: { x: number; y: number }[]) => pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+  // ---- Winkel Sonne → Modul: Richtungsvektoren am Himmel (x Ost, y Nord, z oben), Einfallswinkel = Winkel zwischen Sonne und Modulnormale
+  const vec = (az: number, el: number) => { const a = az * Math.PI / 180, e = el * Math.PI / 180; return [Math.cos(e) * Math.sin(a), Math.cos(e) * Math.cos(a), Math.sin(e)]; };
+  const incidence = (sunAz: number, sunEl: number, pAz: number, tilt: number) => { const a = vec(sunAz, sunEl), b = vec(pAz, 90 - tilt); const dot = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])); return Math.acos(dot) * 180 / Math.PI; };
+  // Kegel mit 60° Öffnung um die Modulnormale, auf die Himmelsprojektion gezeichnet (Punkte unter dem Horizont entfallen)
+  const cone = (pAz: number, tilt: number, half = 60) => {
+    const n = vec(pAz, 90 - tilt); const ref = Math.abs(n[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+    const u0 = [n[1] * ref[2] - n[2] * ref[1], n[2] * ref[0] - n[0] * ref[2], n[0] * ref[1] - n[1] * ref[0]]; const lu = Math.hypot(...u0); const u = u0.map((c) => c / lu);
+    const v = [n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0]];
+    const ch = Math.cos(half * Math.PI / 180), sh = Math.sin(half * Math.PI / 180); const segs: { x: number; y: number }[][] = []; let cur: { x: number; y: number }[] = [];
+    for (let k = 0; k <= 72; k++) { const f = k * 5 * Math.PI / 180; const pnt = [0, 1, 2].map((i) => ch * n[i] + sh * (Math.cos(f) * u[i] + Math.sin(f) * v[i]));
+      const el = Math.asin(Math.max(-1, Math.min(1, pnt[2]))) * 180 / Math.PI, az = (Math.atan2(pnt[0], pnt[1]) * 180 / Math.PI + 360) % 360;
+      if (el >= 0) cur.push(polar(az, el, cx, cy, R)); else if (cur.length) { segs.push(cur); cur = []; } }
+    if (cur.length) segs.push(cur); return segs;
+  };
+  // Modulrichtung je String: konfiguriert, sonst brauchbare Schätzung
+  const panelDir = (i: number): { az: number; tilt: number; fit: boolean } | null => {
+    const c = cfgOf(i); if (c?.tilt != null && c?.azimuth != null) return { az: Number(c.azimuth), tilt: Number(c.tilt), fit: false };
+    const v = d.site?.fit?.strings?.[String(i)]; if (v && (v.status === "ok" || v.status === "uncertain") && v.azimuth != null && v.tilt != null) return { az: v.azimuth, tilt: v.tilt, fit: true };
+    return null;
+  };
+  const panelDirs = strings.map((i) => ({ i, dir: panelDir(i) })).filter((x) => x.dir) as { i: number; dir: { az: number; tilt: number; fit: boolean } }[];
   const maxPeak = Math.max(1, ...d.string_peaks.map((p) => p.w ?? 0));
   const peakDots = useMemo(() => {
     if (lat == null || lon == null) return [];
@@ -252,6 +275,14 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
               {paths.sel.filter((p) => new Date(p.ms).getUTCMinutes() === 0 && p.elevation > 0).map((p) => { const q = polar(p.azimuth, p.elevation, cx, cy, R); const h = Number(new Date(p.ms).toLocaleTimeString("en-GB", { hour: "2-digit", hour12: false, timeZone: TZ }));
                 return <g key={p.ms} className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${fmtTime(p.ms)} · ${t.azimuth} ${p.azimuth.toFixed(0)}° (${compass(p.azimuth, lang)}) · ${t.elevation} ${p.elevation.toFixed(0)}°`, t.tipTime] })} onMouseLeave={() => setTip(null)} onClick={() => { setPlaying(false); setMinute(minuteOf(p.ms)); }}>
                   <circle cx={q.x} cy={q.y} r={6} fill="transparent" /><circle cx={q.x} cy={q.y} r={2} fill="#f2cc0c" />{h % 2 === 0 && <text x={q.x} y={q.y - 5} textAnchor="middle" fill="#c9b04a" fontSize="8">{h}</text>}</g>; })}
+              {panelDirs.map(({ i, dir }) => cone(dir.az, dir.tilt).map((seg, k) => <polyline key={`cone${i}-${k}`} points={poly(seg)} fill="none" stroke={STRING_COLORS[i - 1]} strokeWidth={0.8} opacity={0.35} strokeDasharray="3 3" />))}
+              {sun && sun.elevation > 0 && panelDirs.map(({ i, dir }) => { const q = polar(dir.az, 90 - dir.tilt, cx, cy, R), sp = polar(sun.azimuth, sun.elevation, cx, cy, R);
+                const ang = incidence(sun.azimuth, sun.elevation, dir.az, dir.tilt), pct = Math.max(0, Math.cos(ang * Math.PI / 180)) * 100, behind = ang >= 90;
+                const mx = (q.x + sp.x) / 2, my = (q.y + sp.y) / 2, label = behind ? `${ang.toFixed(0)}° · 0 %` : `${ang.toFixed(0)}° · ${pct.toFixed(0)} %`;
+                return <g key={`ang${i}`} className="hit" onMouseEnter={() => setTip({ x: mx, y: my, lines: [`${t.string} ${i} · ${t.incidence} ${ang.toFixed(0)}°`, behind ? t.behind : `${t.yieldGeo} ${pct.toFixed(0)} % (cos)`] })} onMouseLeave={() => setTip(null)}>
+                  <line x1={sp.x} y1={sp.y} x2={q.x} y2={q.y} stroke="transparent" strokeWidth={10} />
+                  <line x1={sp.x} y1={sp.y} x2={q.x} y2={q.y} stroke={STRING_COLORS[i - 1]} strokeWidth={behind ? 1 : 1.6} strokeDasharray={behind ? "3 4" : undefined} opacity={behind ? 0.45 : 0.85} />
+                  <text x={mx} y={my - 4} textAnchor="middle" fontSize="9" fontWeight={600} fill={STRING_COLORS[i - 1]} stroke="#14171c" strokeWidth={3} paintOrder="stroke">{label}</text></g>; })}
               {strings.map((i) => { const c = cfgOf(i); if (c?.tilt == null || c?.azimuth == null) return null; const q = polar(Number(c.azimuth), 90 - Number(c.tilt), cx, cy, R);
                 return <g key={i} className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${t.string} ${i} · ${t.panelCfg}`, `${t.facing} ${compass(Number(c.azimuth), lang)} ${Number(c.azimuth).toFixed(0)}° · ${t.tilt} ${Number(c.tilt).toFixed(0)}°${c.wp ? ` · ${Number(c.wp).toFixed(0)} Wp` : ""}`, t.tipString] })} onMouseLeave={() => setTip(null)} onClick={() => setAllStr(i as 1 | 2 | 3 | 4)}>
                   <rect x={q.x - 5} y={q.y - 5} width={10} height={10} fill={STRING_COLORS[i - 1]} stroke="#fff" strokeWidth={1} transform={`rotate(45 ${q.x} ${q.y})`} /><text x={q.x + 8} y={q.y + 4} fill={STRING_COLORS[i - 1]} fontSize="9">S{i}</text></g>; })}
@@ -262,7 +293,8 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
                 onMouseEnter={() => setTip({ x: p.x, y: p.y, lines: [`${t.string} ${p.string} · ${t.peakOf} ${fmtDate(p.t)} ${fmtTime(p.ms)}`, `${fmtW(p.w)} · ${t.azimuth} ${p.azimuth.toFixed(0)}° (${compass(p.azimuth, lang)}) · ${t.elevation} ${p.elevation.toFixed(0)}°`, p.day === d.day.key ? t.tipTime : t.tipDay] })} onMouseLeave={() => setTip(null)}
                 onClick={() => { setPlaying(false); if (p.day === d.day.key) setMinute(minuteOf(p.ms)); else { pendingMinute.current = minuteOf(p.ms); setDay(p.day); } }} />)}
               {sun && (() => { const q = polar(sun.azimuth, sun.elevation, cx, cy, R); const up = sun.elevation > 0; return (
-                <g className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${t.sunNow} ${fmtTime(curMs)}${up ? "" : ` · ${t.belowHorizon}`}`, `${t.azimuth} ${sun.azimuth.toFixed(0)}° (${compass(sun.azimuth, lang)}) · ${t.elevation} ${sun.elevation.toFixed(1)}°`, t.tipPlay] })} onMouseLeave={() => setTip(null)}
+                <g className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${t.sunNow} ${fmtTime(curMs)}${up ? "" : ` · ${t.belowHorizon}`}`, `${t.azimuth} ${sun.azimuth.toFixed(0)}° (${compass(sun.azimuth, lang)}) · ${t.elevation} ${sun.elevation.toFixed(1)}°`,
+                    ...(up ? panelDirs.map(({ i, dir }) => { const ang = incidence(sun.azimuth, sun.elevation, dir.az, dir.tilt); return `${t.string} ${i}: ${t.incidence} ${ang.toFixed(0)}° · ${ang >= 90 ? t.behind : `${(Math.cos(ang * Math.PI / 180) * 100).toFixed(0)} %`}`; }) : []), t.tipPlay] })} onMouseLeave={() => setTip(null)}
                    onClick={() => { if (!playing && (minute == null || minute >= 1435)) setMinute(240); setPlaying(!playing); }}>
                   {up && <circle cx={q.x} cy={q.y} r={22} fill="#ffb300" opacity={0.18} />}
                   {up && Array.from({ length: 12 }, (_, k) => { const a = (k * 30) * Math.PI / 180, r1 = 15, r2 = k % 2 === 0 ? 24 : 20;
@@ -275,7 +307,7 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
                 <g pointerEvents="none"><rect x={x} y={y} width={w} height={h} rx={4} fill="#1c1f24" stroke="#444b54" opacity={0.96} />
                   {tip.lines.map((l, i) => <text key={i} x={x + 7} y={y + 14 + i * 13} fontSize="9.5" fill={i === 0 ? "#d8d9da" : i === tip.lines.length - 1 && tip.lines.length > 1 ? "#8e8e8e" : "#c9cacc"} fontWeight={i === 0 ? 600 : 400}>{l}</text>)}</g>); })()}
             </svg>)}
-          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}><span style={{ color: "#ff9f1c" }}>☀</span> {t.sunNow} · — {t.selected} · ╌ {t.solstice} / {t.winter} · ··· {t.equinox} · {t.legendPeaks} · {t.legendFit}</div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}><span style={{ color: "#ff9f1c" }}>☀</span> {t.sunNow} · — {t.selected} · ╌ {t.solstice} / {t.winter} · ··· {t.equinox} · {t.legendPeaks} · {t.legendFit} · {t.legendAngle}</div>
         </div>
 
         <div>
