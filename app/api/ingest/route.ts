@@ -9,7 +9,7 @@ type WeatherCurrent = { temperature?: number | null; cloud_cover?: number | null
   wind_speed?: number | null; weather_code?: number | null; is_day?: number | null; condition_en?: string | null; condition_de?: string | null;
   sunrise?: string | null; sunset?: string | null; sunshine_duration_today?: number | null; radiation_sum_today?: number | null };
 type WeatherForecast = { t: string; shortwave_radiation?: number | null; cloud_cover?: number | null; temperature?: number | null; weather_code?: number | null };
-type Site = { name?: string | null; lat?: number | null; lon?: number | null; strings?: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }>; assumed?: Record<string, unknown> };
+type Site = { name?: string | null; lat?: number | null; lon?: number | null; strings?: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }>; assumed?: Record<string, unknown>; names?: Record<string, string> };
 type ModelRow = { t: string; string: number; gti?: number | null; expected_w?: number | null };
 type ShellyState = { grid_w?: number|null; household_w?: number|null; out_w?: number|null; target_w?: number|null; setpoint_w?: number|null; ok?: boolean|null; enabled?: boolean|null; host?: string|null;
   limited?: boolean|null; reason?: string|null; soc?: number|null; soc_limit?: number|null; max_w?: number|null };
@@ -78,8 +78,8 @@ export async function POST(req: NextRequest) {
       weather++;
     }
     if (w.site && w.site.lat != null && w.site.lon != null) {
-      await sql`INSERT INTO site (id, updated, name, lat, lon, strings, assumed) VALUES (1, now(), ${w.site.name ?? null}, ${w.site.lat}, ${w.site.lon}, ${JSON.stringify(w.site.strings || {})}::jsonb, ${JSON.stringify(w.site.assumed || {})}::jsonb)
-        ON CONFLICT (id) DO UPDATE SET updated = now(), name = EXCLUDED.name, lat = EXCLUDED.lat, lon = EXCLUDED.lon, strings = EXCLUDED.strings, assumed = EXCLUDED.assumed`;
+      await sql`INSERT INTO site (id, updated, name, lat, lon, strings, assumed, names) VALUES (1, now(), ${w.site.name ?? null}, ${w.site.lat}, ${w.site.lon}, ${JSON.stringify(w.site.strings || {})}::jsonb, ${JSON.stringify(w.site.assumed || {})}::jsonb, ${JSON.stringify(w.site.names || {})}::jsonb)
+        ON CONFLICT (id) DO UPDATE SET updated = now(), name = EXCLUDED.name, lat = EXCLUDED.lat, lon = EXCLUDED.lon, strings = EXCLUDED.strings, assumed = EXCLUDED.assumed, names = EXCLUDED.names`;
       weather++;
     }
     if (w.advice && typeof w.advice === "object") {

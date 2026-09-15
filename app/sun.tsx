@@ -6,7 +6,7 @@ import { compass, polar, sunPath, sunPosition } from "@/lib/solar";
 export type SunData = {
   site: { name: string | null; lat: number | null; lon: number | null; strings: Record<string, { tilt?: number | null; azimuth?: number | null; wp?: number | null }>;
           fit?: { updated: number; days: number; strings: Record<string, { status: string; azimuth?: number; tilt?: number; wp?: number; r2?: number; hours?: number; az_range?: number[]; tilt_range?: number[]; peak_w?: number }> } | null;
-          assumed?: Record<string, { tilt?: number; azimuth?: number; wp?: number; source?: string }>;
+          assumed?: Record<string, { tilt?: number; azimuth?: number; wp?: number; source?: string }>; names?: Record<string, string>;
           advice?: Advice | null } | null;
   day: { key: string; start: string; end: string; today: string };
   string_peaks: { day: string; string: number; t: string; w: number | null }[];
@@ -109,6 +109,7 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
     return [1, 2, 3, 4].filter((i) => active.has(i));
   }, [d]);
   const cfgOf = (i: number) => d.site?.strings?.[String(i)];
+  const strName = (i: number): string => d.site?.names?.[String(i)] || `${t.string} ${i}`;   // eigener Name von der Einstellungsseite, sonst "String n"
 
   // ---- Leistung je String zum Slider-Zeitpunkt (nächster 5-Minuten-Wert)
   const powerAt = (i: number, ms: number) => {
@@ -229,12 +230,12 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
       <div className="tiles" style={{ marginBottom: 14 }}>
         {strings.length === 0 && <div className="muted">{t.noStrings}</div>}
         {strings.map((i, k) => { const p = peaksToday[k]; const c = cfgOf(i); return (
-          <div className="tile" key={i}><div className="k">{t.string} {i} · {t.peakToday} {isToday ? t.today : fmtDate(d.day.start)}</div>
+          <div className="tile" key={i}><div className="k">{strName(i)} · {t.peakToday} {isToday ? t.today : fmtDate(d.day.start)}</div>
             <div className="v" style={{ color: STRING_COLORS[i - 1] }}>{p ? fmtW(p.w) : "–"}</div>
             <div className="s">{p ? `${t.at} ${fmtTime(new Date(p.t).getTime())}${lat != null && lon != null ? ` · ${t.sunNow} ${compass(sunPosition(new Date(p.t).getTime(), lat, lon).azimuth, lang)} ${sunPosition(new Date(p.t).getTime(), lat, lon).elevation.toFixed(0)}°` : ""}` : t.noPeak}
               {c?.tilt != null && c?.azimuth != null ? ` · ${t.panels}: ${compass(Number(c.azimuth), lang)} ${Number(c.azimuth).toFixed(0)}° / ${t.tilt} ${Number(c.tilt).toFixed(0)}°${c.wp ? ` / ${Number(c.wp).toFixed(0)} Wp` : ""}` : ""}</div></div>); })}
         {strings.map((i) => { const st = dayStats.s[i]; return (
-          <div className="tile" key={`avg${i}`}><div className="k">{t.string} {i} · {t.avgDay} {isToday ? t.today : fmtDate(d.day.start)}</div>
+          <div className="tile" key={`avg${i}`}><div className="k">{strName(i)} · {t.avgDay} {isToday ? t.today : fmtDate(d.day.start)}</div>
             <div className="v" style={{ color: STRING_COLORS[i - 1] }}>{st?.avg != null ? fmtW(st.avg) : "–"}</div>
             <div className="s">{t.energyDay} {fmtWh(st?.wh ?? null)}{st?.wh30 != null ? ` · ${t.avg30} ${fmtWh(st.wh30)} ${t.perDay}` : ""}</div></div>); })}
         {strings.length > 1 && <div className="tile"><div className="k">{t.allStrings} · {t.avgDay} {isToday ? t.today : fmtDate(d.day.start)}</div>
@@ -248,7 +249,7 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
 
       {d.site?.fit && (() => { const f = d.site!.fit!; const rows = strings.map((i) => [i, f.strings?.[String(i)]] as const).filter(([, v]) => v && v.status !== "unused");
         return rows.length ? <div className="fitrow"><span className="muted">{t.fit} {t.fitFrom} · {new Date(f.updated * 1000).toLocaleDateString(locale, { day: "2-digit", month: "2-digit", timeZone: TZ })} · {f.days} d</span>
-          {rows.map(([i, v]) => <span key={i} className="fitchip" style={{ borderColor: STRING_COLORS[i - 1] }}><b style={{ color: STRING_COLORS[i - 1] }}>{t.string} {i}</b>{" "}
+          {rows.map(([i, v]) => <span key={i} className="fitchip" style={{ borderColor: STRING_COLORS[i - 1] }}><b style={{ color: STRING_COLORS[i - 1] }}>{strName(i)}</b>{" "}
             {v!.status === "insufficient" ? `${t.fitInsufficient} (${v!.hours ?? 0} ${t.fitHours})` : `${compass(v!.azimuth!, lang)} ${v!.azimuth}° / ${t.tilt} ${v!.tilt}° / ${v!.wp} Wp · R² ${v!.r2?.toFixed(2)} (${v!.status === "ok" ? t.fitOk : t.fitUncertain}, ${v!.hours} ${t.fitHours})`}</span>)}
           <span className="muted" style={{ fontSize: 11 }}>{t.fitHint}</span></div> : null; })()}
       <div className="sunwrap">
@@ -279,22 +280,22 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
               {sun && sun.elevation > 0 && panelDirs.map(({ i, dir }) => { const q = polar(dir.az, 90 - dir.tilt, cx, cy, R), sp = polar(sun.azimuth, sun.elevation, cx, cy, R);
                 const ang = incidence(sun.azimuth, sun.elevation, dir.az, dir.tilt), pct = Math.max(0, Math.cos(ang * Math.PI / 180)) * 100, behind = ang >= 90;
                 const mx = (q.x + sp.x) / 2, my = (q.y + sp.y) / 2, label = behind ? `${ang.toFixed(0)}° · 0 %` : `${ang.toFixed(0)}° · ${pct.toFixed(0)} %`;
-                return <g key={`ang${i}`} className="hit" onMouseEnter={() => setTip({ x: mx, y: my, lines: [`${t.string} ${i} · ${t.incidence} ${ang.toFixed(0)}°`, behind ? t.behind : `${t.yieldGeo} ${pct.toFixed(0)} % (cos)`] })} onMouseLeave={() => setTip(null)}>
+                return <g key={`ang${i}`} className="hit" onMouseEnter={() => setTip({ x: mx, y: my, lines: [`${strName(i)} · ${t.incidence} ${ang.toFixed(0)}°`, behind ? t.behind : `${t.yieldGeo} ${pct.toFixed(0)} % (cos)`] })} onMouseLeave={() => setTip(null)}>
                   <line x1={sp.x} y1={sp.y} x2={q.x} y2={q.y} stroke="transparent" strokeWidth={10} />
                   <line x1={sp.x} y1={sp.y} x2={q.x} y2={q.y} stroke={STRING_COLORS[i - 1]} strokeWidth={behind ? 1 : 1.6} strokeDasharray={behind ? "3 4" : undefined} opacity={behind ? 0.45 : 0.85} />
                   <text x={mx} y={my - 4} textAnchor="middle" fontSize="9" fontWeight={600} fill={STRING_COLORS[i - 1]} stroke="#14171c" strokeWidth={3} paintOrder="stroke">{label}</text></g>; })}
               {strings.map((i) => { const c = cfgOf(i); if (c?.tilt == null || c?.azimuth == null) return null; const q = polar(Number(c.azimuth), 90 - Number(c.tilt), cx, cy, R);
-                return <g key={i} className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${t.string} ${i} · ${t.panelCfg}`, `${t.facing} ${compass(Number(c.azimuth), lang)} ${Number(c.azimuth).toFixed(0)}° · ${t.tilt} ${Number(c.tilt).toFixed(0)}°${c.wp ? ` · ${Number(c.wp).toFixed(0)} Wp` : ""}`, t.tipString] })} onMouseLeave={() => setTip(null)} onClick={() => setAllStr(i as 1 | 2 | 3 | 4)}>
-                  <rect x={q.x - 5} y={q.y - 5} width={10} height={10} fill={STRING_COLORS[i - 1]} stroke="#fff" strokeWidth={1} transform={`rotate(45 ${q.x} ${q.y})`} /><text x={q.x + 8} y={q.y + 4} fill={STRING_COLORS[i - 1]} fontSize="9">S{i}</text></g>; })}
+                return <g key={i} className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${strName(i)} · ${t.panelCfg}`, `${t.facing} ${compass(Number(c.azimuth), lang)} ${Number(c.azimuth).toFixed(0)}° · ${t.tilt} ${Number(c.tilt).toFixed(0)}°${c.wp ? ` · ${Number(c.wp).toFixed(0)} Wp` : ""}`, t.tipString] })} onMouseLeave={() => setTip(null)} onClick={() => setAllStr(i as 1 | 2 | 3 | 4)}>
+                  <rect x={q.x - 5} y={q.y - 5} width={10} height={10} fill={STRING_COLORS[i - 1]} stroke="#fff" strokeWidth={1} transform={`rotate(45 ${q.x} ${q.y})`} /><text x={q.x + 8} y={q.y + 4} fill={STRING_COLORS[i - 1]} fontSize="9">{d.site?.names?.[String(i)] ? d.site.names[String(i)].slice(0, 12) : `S${i}`}</text></g>; })}
               {strings.map((i) => { const v = d.site?.fit?.strings?.[String(i)]; if (!v || v.status !== "ok" && v.status !== "uncertain" || v.azimuth == null || v.tilt == null) return null; const q = polar(v.azimuth, 90 - v.tilt, cx, cy, R);
-                return <g key={`fit${i}`} className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${t.string} ${i} · ${t.panelFit}`, `${t.facing} ${compass(v.azimuth!, lang)} ${v.azimuth}° · ${t.tilt} ${v.tilt}° · ${v.wp} Wp · R² ${v.r2?.toFixed(2)} (${v.status === "ok" ? t.fitOk : t.fitUncertain})`, t.tipString] })} onMouseLeave={() => setTip(null)} onClick={() => setAllStr(i as 1 | 2 | 3 | 4)}>
+                return <g key={`fit${i}`} className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${strName(i)} · ${t.panelFit}`, `${t.facing} ${compass(v.azimuth!, lang)} ${v.azimuth}° · ${t.tilt} ${v.tilt}° · ${v.wp} Wp · R² ${v.r2?.toFixed(2)} (${v.status === "ok" ? t.fitOk : t.fitUncertain})`, t.tipString] })} onMouseLeave={() => setTip(null)} onClick={() => setAllStr(i as 1 | 2 | 3 | 4)}>
                   <rect x={q.x - 6} y={q.y - 6} width={12} height={12} fill="none" stroke={STRING_COLORS[i - 1]} strokeWidth={1.5} strokeDasharray={v.status === "ok" ? undefined : "2 2"} transform={`rotate(45 ${q.x} ${q.y})`} /></g>; })}
               {peakDots.map((p) => <circle key={`${p.day}-${p.string}`} className="hit" cx={p.x} cy={p.y} r={Math.max(4, 2.5 + 6 * ((p.w ?? 0) / maxPeak))} fill={STRING_COLORS[p.string - 1]} fillOpacity={p.day === d.day.key ? 1 : 0.55} stroke={p.day === d.day.key ? "#fff" : "none"} strokeWidth={1}
-                onMouseEnter={() => setTip({ x: p.x, y: p.y, lines: [`${t.string} ${p.string} · ${t.peakOf} ${fmtDate(p.t)} ${fmtTime(p.ms)}`, `${fmtW(p.w)} · ${t.azimuth} ${p.azimuth.toFixed(0)}° (${compass(p.azimuth, lang)}) · ${t.elevation} ${p.elevation.toFixed(0)}°`, p.day === d.day.key ? t.tipTime : t.tipDay] })} onMouseLeave={() => setTip(null)}
+                onMouseEnter={() => setTip({ x: p.x, y: p.y, lines: [`${strName(p.string)} · ${t.peakOf} ${fmtDate(p.t)} ${fmtTime(p.ms)}`, `${fmtW(p.w)} · ${t.azimuth} ${p.azimuth.toFixed(0)}° (${compass(p.azimuth, lang)}) · ${t.elevation} ${p.elevation.toFixed(0)}°`, p.day === d.day.key ? t.tipTime : t.tipDay] })} onMouseLeave={() => setTip(null)}
                 onClick={() => { setPlaying(false); if (p.day === d.day.key) setMinute(minuteOf(p.ms)); else { pendingMinute.current = minuteOf(p.ms); setDay(p.day); } }} />)}
               {sun && (() => { const q = polar(sun.azimuth, sun.elevation, cx, cy, R); const up = sun.elevation > 0; return (
                 <g className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${t.sunNow} ${fmtTime(curMs)}${up ? "" : ` · ${t.belowHorizon}`}`, `${t.azimuth} ${sun.azimuth.toFixed(0)}° (${compass(sun.azimuth, lang)}) · ${t.elevation} ${sun.elevation.toFixed(1)}°`,
-                    ...(up ? panelDirs.map(({ i, dir }) => { const ang = incidence(sun.azimuth, sun.elevation, dir.az, dir.tilt); return `${t.string} ${i}: ${t.incidence} ${ang.toFixed(0)}° · ${ang >= 90 ? t.behind : `${(Math.cos(ang * Math.PI / 180) * 100).toFixed(0)} %`}`; }) : []), t.tipPlay] })} onMouseLeave={() => setTip(null)}
+                    ...(up ? panelDirs.map(({ i, dir }) => { const ang = incidence(sun.azimuth, sun.elevation, dir.az, dir.tilt); return `${strName(i)}: ${t.incidence} ${ang.toFixed(0)}° · ${ang >= 90 ? t.behind : `${(Math.cos(ang * Math.PI / 180) * 100).toFixed(0)} %`}`; }) : []), t.tipPlay] })} onMouseLeave={() => setTip(null)}
                    onClick={() => { if (!playing && (minute == null || minute >= 1435)) setMinute(240); setPlaying(!playing); }}>
                   {up && <circle cx={q.x} cy={q.y} r={22} fill="#ffb300" opacity={0.18} />}
                   {up && Array.from({ length: 12 }, (_, k) => { const a = (k * 30) * Math.PI / 180, r1 = 15, r2 = k % 2 === 0 ? 24 : 20;
@@ -327,16 +328,16 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
           <div className="stringcards">
             {strings.map((i) => { const p = powerAt(i, curMs); const e = expectedAt(i, curMs); const a = Math.min(1, Math.max(0, (p ?? 0) / dayMax)); const rgb = heatColorOf(i);
               return <div key={i} className="scard" style={{ background: `rgba(${rgb}, ${0.06 + 0.6 * a})`, borderColor: `rgba(${rgb}, ${0.3 + 0.7 * a})`, boxShadow: a > 0.05 ? `0 0 ${20 * a}px rgba(${rgb}, ${0.6 * a})` : "none" }}>
-                <div className="k">{t.string} {i}</div><div className="v">{p == null ? "–" : fmtW(p)}</div>{e != null && <div className="s">{t.expected} {fmtW(e)}</div>}</div>; })}
+                <div className="k">{strName(i)}</div><div className="v">{p == null ? "–" : fmtW(p)}</div>{e != null && <div className="s">{t.expected} {fmtW(e)}</div>}</div>; })}
           </div>
           <div className="muted" style={{ fontSize: 12, margin: "10px 0 2px" }}>{t.dayChart}{!hasModel ? ` · ${t.noModel}` : ""}
-            {hasModel && strings.some((i) => d.site?.assumed?.[String(i)] && !cfgOf(i)) && ` · ${t.expectedAssumed} (${strings.filter((i) => d.site?.assumed?.[String(i)] && !cfgOf(i)).map((i) => { const a = d.site!.assumed![String(i)]; return `${t.string} ${i}: ${compass(Number(a.azimuth), lang)} ${a.azimuth}° / ${a.tilt}° / ${a.wp} Wp, ${a.source === "fit" ? t.fromFit : t.fromSiteBest}`; }).join("; ")}) ${t.untilConfigured}`}</div>
+            {hasModel && strings.some((i) => d.site?.assumed?.[String(i)] && !cfgOf(i)) && ` · ${t.expectedAssumed} (${strings.filter((i) => d.site?.assumed?.[String(i)] && !cfgOf(i)).map((i) => { const a = d.site!.assumed![String(i)]; return `${strName(i)}: ${compass(Number(a.azimuth), lang)} ${a.azimuth}° / ${a.tilt}° / ${a.wp} Wp, ${a.source === "fit" ? t.fromFit : t.fromSiteBest}`; }).join("; ")}) ${t.untilConfigured}`}</div>
           <div style={{ height: 210 }}><ResponsiveContainer><LineChart data={chart}><CartesianGrid stroke="#2c3235" />
             <XAxis dataKey="ms" type="number" domain={[dayStart, dayStart + 86400000]} ticks={Array.from({ length: 9 }, (_, k) => dayStart + k * 3 * 3600000)} tickFormatter={(v) => fmtTime(Number(v))} stroke="#8e8e8e" fontSize={11} />
             <YAxis stroke="#8e8e8e" fontSize={11} unit=" W" /><Tooltip contentStyle={{ background: "#1c1f24", border: "1px solid #2c3235", fontSize: 12 }} formatter={(v) => fmtW(Number(v))} labelFormatter={(v) => fmtTime(Number(v))} /><Legend />
             {curMs >= dayStart && curMs <= dayStart + 86400000 && <ReferenceLine x={curMs} stroke="#fff" strokeDasharray="3 3" label={{ value: minute != null ? fmtTime(curMs) : `${t.now} ${fmtTime(curMs)}`, position: "insideTopLeft", fill: "#d8d9da", fontSize: 11 }} />}
-            {strings.map((i) => <Line key={`s${i}`} type="monotone" dataKey={`s${i}`} name={`${t.string} ${i}`} stroke={STRING_COLORS[i - 1]} dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />)}
-            {strings.map((i) => <Line key={`e${i}`} type="monotone" dataKey={`e${i}`} name={`${t.string} ${i} ${t.expected}`} stroke={STRING_COLORS[i - 1]} strokeDasharray="6 4" dot={false} strokeWidth={1.2} connectNulls isAnimationActive={false} />)}
+            {strings.map((i) => <Line key={`s${i}`} type="monotone" dataKey={`s${i}`} name={`${strName(i)}`} stroke={STRING_COLORS[i - 1]} dot={false} strokeWidth={2} connectNulls isAnimationActive={false} />)}
+            {strings.map((i) => <Line key={`e${i}`} type="monotone" dataKey={`e${i}`} name={`${strName(i)} ${t.expected}`} stroke={STRING_COLORS[i - 1]} strokeDasharray="6 4" dot={false} strokeWidth={1.2} connectNulls isAnimationActive={false} />)}
           </LineChart></ResponsiveContainer></div>
         </div>
       </div>

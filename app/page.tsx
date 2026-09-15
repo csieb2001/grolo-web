@@ -223,7 +223,7 @@ export default function Page() {
                 const total = rows.reduce((a, r) => a + r.kwh, 0), best = rows[0]?.kwh || 0;
                 return (<div key={w.key} className="rank"><div className="k">{w.label}</div>
                   {rows.map((r, i) => (<div key={r.string} className="row">
-                    <span className="pos">{i + 1}.</span><span className="name" style={{ color: SC[r.string - 1] }}>{t.string} {r.string}</span>
+                    <span className="pos">{i + 1}.</span><span className="name" style={{ color: SC[r.string - 1] }} title={`${t.string} ${r.string}`}>{data?.site?.names?.[String(r.string)] || `${t.string} ${r.string}`}</span>
                     <span className="bar"><span style={{ width: `${best > 0 ? r.kwh / best * 100 : 0}%`, background: SC[r.string - 1] }} /></span>
                     <span className="val">{r.kwh > 0.0005 ? fmtKwh(r.kwh) : t.noYield}</span><span className="pct">{total > 0 && r.kwh > 0.0005 ? `${Math.round(r.kwh / total * 100)} %` : ""}</span>
                   </div>))}
@@ -259,7 +259,7 @@ export default function Page() {
               return <tr key={i}><td>{t.pack} {i}</td><td>{soc != null ? `${Math.round(soc)} %` : "–"}</td><td>{tp != null ? `${tp.toFixed(1)} °C` : "–"}</td></tr>; })}
           </tbody></table>
           <div className="tiles" style={{ marginTop: 12 }}>
-            {l?.pv_v && [1, 2, 3, 4].map(i => <Tile key={i} k={`${t.string} ${i}`} v={(l.pv_v![i - 1] ?? 0) > 15 ? fmtW((l.pv_v![i - 1] ?? 0) * (l.pv_a?.[i - 1] ?? 0)) : t.free} s={`${(l.pv_v![i - 1] ?? 0).toFixed(1)} V · ${((l.pv_a?.[i - 1] ?? 0) * 1000).toFixed(0)} mA`} color={(l.pv_v![i - 1] ?? 0) > 15 ? "var(--pv)" : "var(--muted)"} />)}
+            {l?.pv_v && [1, 2, 3, 4].map(i => <Tile key={i} k={data?.site?.names?.[String(i)] || `${t.string} ${i}`} v={(l.pv_v![i - 1] ?? 0) > 15 ? fmtW((l.pv_v![i - 1] ?? 0) * (l.pv_a?.[i - 1] ?? 0)) : t.free} s={`${(l.pv_v![i - 1] ?? 0).toFixed(1)} V · ${((l.pv_a?.[i - 1] ?? 0) * 1000).toFixed(0)} mA`} color={(l.pv_v![i - 1] ?? 0) > 15 ? "var(--pv)" : "var(--muted)"} />)}
             {data?.info && <Tile k={t.dongle} v={data.info.dongle_model || "–"} s={`SW ${data.info.dongle_sw ?? "–"} · HW ${data.info.dongle_hw ?? "–"} · ${t.wifi} ${data.info.wifi_dbm ?? "–"} dBm`} />}
           </div>
         </section>

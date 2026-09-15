@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
     FROM weather_history WHERE ts > now() - make_interval(secs => ${range.seconds}) GROUP BY 1 ORDER BY 1`;
 
   // Strings: Tagesspitzen (30 Tage), 5-Minuten-Verlauf des gewählten Tages, Stunde × Tag, Erwartungsmodell, Standort
-  const site = await sql`SELECT name, lat, lon, strings, fit, advice, assumed, updated FROM site WHERE id = 1`;
+  const site = await sql`SELECT name, lat, lon, strings, fit, advice, assumed, names, updated FROM site WHERE id = 1`;
   const dayBounds = await sql`SELECT (${day}::date::timestamp AT TIME ZONE ${TZ}) AS start, ((${day}::date + 1)::timestamp AT TIME ZONE ${TZ}) AS "end"`;
   const peaks = await sql`
     SELECT DISTINCT ON (day, s) day, s AS string, ts, p FROM (
@@ -165,7 +165,7 @@ export async function GET(req: NextRequest) {
       total: { out_kwh: num(periods[0].out_total), acin_kwh: num(periods[0].acin_total), grid_kwh: num(periods[0].grid_total), feedin_kwh: num(periods[0].feedin_total), days: Number(periods[0].days), since: periods[0].since },
     } : null,
     tariff: tariff[0] ? { price_ct_kwh: num(tariff[0].price_ct_kwh), feedin_ct_kwh: num(tariff[0].feedin_ct_kwh) ?? 0, system_cost_eur: num(tariff[0].system_cost_eur) ?? 0, currency: tariff[0].currency || "EUR", updated: tariff[0].updated } : null,
-    site: site[0] ? { name: site[0].name, lat: num(site[0].lat), lon: num(site[0].lon), strings: site[0].strings || {}, fit: site[0].fit || null, advice: site[0].advice || null, assumed: site[0].assumed || {}, updated: site[0].updated } : null,
+    site: site[0] ? { name: site[0].name, lat: num(site[0].lat), lon: num(site[0].lon), strings: site[0].strings || {}, fit: site[0].fit || null, advice: site[0].advice || null, assumed: site[0].assumed || {}, names: site[0].names || {}, updated: site[0].updated } : null,
     day: { key: day, start: dayBounds[0].start, end: dayBounds[0].end, today: todayKey },
     string_peaks: peaks.map((r) => ({ day: String(r.day), string: Number(r.string), t: r.ts, w: num(r.p) })),
     strings_day: stringsDay.map((r) => ({ t: r.t, s1: num(r.s1), s2: num(r.s2), s3: num(r.s3), s4: num(r.s4), pv: num(r.pv) })),

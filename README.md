@@ -53,7 +53,7 @@ The push service in the stack needs `WEB_URL=https://grolo-web.vercel.app` and `
 ```
 
 `weather.current` may also carry `sun_azimuth` / `sun_elevation`. `weather.site` is the location and panel orientation from
-the GroLo settings page, `weather.model` the expected power per string and hour (transposed Open-Meteo irradiance).
+the GroLo settings page (`names` = optional per-string labels, shown everywhere instead of “String n”), `weather.model` the expected power per string and hour (transposed Open-Meteo irradiance).
 
 `grid_w`/`house_w` per sample are the Shelly grid import and household load averaged over the push interval (only while the
 zero feed-in control runs); `shelly` is the controller state, `tariff` the electricity price from the stack's settings page

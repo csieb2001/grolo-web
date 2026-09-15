@@ -37,7 +37,7 @@ export function ensureSchema() {
       await sql`CREATE TABLE IF NOT EXISTS site (
         id smallint PRIMARY KEY DEFAULT 1, updated timestamptz NOT NULL, name text, lat real, lon real, strings jsonb
       )`;
-      await sql`ALTER TABLE site ADD COLUMN IF NOT EXISTS fit jsonb, ADD COLUMN IF NOT EXISTS advice jsonb, ADD COLUMN IF NOT EXISTS assumed jsonb`;
+      await sql`ALTER TABLE site ADD COLUMN IF NOT EXISTS fit jsonb, ADD COLUMN IF NOT EXISTS advice jsonb, ADD COLUMN IF NOT EXISTS assumed jsonb, ADD COLUMN IF NOT EXISTS names jsonb`;
       await sql`CREATE TABLE IF NOT EXISTS shelly (
         id smallint PRIMARY KEY DEFAULT 1, updated timestamptz NOT NULL,
         grid_w real, household_w real, out_w real, target_w real, setpoint_w real, ok boolean, enabled boolean, host text
