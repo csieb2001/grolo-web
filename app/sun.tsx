@@ -264,13 +264,18 @@ export function SunSection({ d, lang, fmtDate, setDay }: { d: SunData; lang: "de
               {sun && (() => { const q = polar(sun.azimuth, sun.elevation, cx, cy, R); const up = sun.elevation > 0; return (
                 <g className="hit" onMouseEnter={() => setTip({ x: q.x, y: q.y, lines: [`${t.sunNow} ${fmtTime(curMs)}${up ? "" : ` · ${t.belowHorizon}`}`, `${t.azimuth} ${sun.azimuth.toFixed(0)}° (${compass(sun.azimuth, lang)}) · ${t.elevation} ${sun.elevation.toFixed(1)}°`, t.tipPlay] })} onMouseLeave={() => setTip(null)}
                    onClick={() => { if (!playing && (minute == null || minute >= 1435)) setMinute(240); setPlaying(!playing); }}>
-                  <circle cx={q.x} cy={q.y} r={up ? 9 : 6} fill={up ? "#ffe066" : "#3a3f46"} stroke={up ? "#fff3b0" : "#5d6368"} strokeWidth={1.5} filter={up ? "url(#glow)" : undefined} /></g>); })()}
+                  {up && <circle cx={q.x} cy={q.y} r={22} fill="#ffb300" opacity={0.18} />}
+                  {up && Array.from({ length: 12 }, (_, k) => { const a = (k * 30) * Math.PI / 180, r1 = 15, r2 = k % 2 === 0 ? 24 : 20;
+                    return <line key={k} x1={q.x + r1 * Math.cos(a)} y1={q.y + r1 * Math.sin(a)} x2={q.x + r2 * Math.cos(a)} y2={q.y + r2 * Math.sin(a)} stroke="#ff9f1c" strokeWidth={2.2} strokeLinecap="round" />; })}
+                  <circle cx={q.x} cy={q.y} r={up ? 12 : 7} fill={up ? "#ff9f1c" : "#3a3f46"} stroke={up ? "#fff" : "#5d6368"} strokeWidth={2} filter={up ? "url(#glow)" : undefined} />
+                  {up && <circle cx={q.x} cy={q.y} r={6} fill="#ffe066" />}
+                  {!up && Array.from({ length: 8 }, (_, k) => { const a = (k * 45) * Math.PI / 180; return <line key={k} x1={q.x + 9 * Math.cos(a)} y1={q.y + 9 * Math.sin(a)} x2={q.x + 12 * Math.cos(a)} y2={q.y + 12 * Math.sin(a)} stroke="#5d6368" strokeWidth={1.5} strokeLinecap="round" />; })}</g>); })()}
               {tip && (() => { const w = Math.min(W - 8, Math.max(...tip.lines.map((l) => l.length)) * 5.4 + 14), h = tip.lines.length * 13 + 8;
                 const x = Math.max(4, Math.min(W - w - 4, tip.x - w / 2)), y = tip.y - h - 12 < 4 ? tip.y + 14 : tip.y - h - 12; return (
                 <g pointerEvents="none"><rect x={x} y={y} width={w} height={h} rx={4} fill="#1c1f24" stroke="#444b54" opacity={0.96} />
                   {tip.lines.map((l, i) => <text key={i} x={x + 7} y={y + 14 + i * 13} fontSize="9.5" fill={i === 0 ? "#d8d9da" : i === tip.lines.length - 1 && tip.lines.length > 1 ? "#8e8e8e" : "#c9cacc"} fontWeight={i === 0 ? 600 : 400}>{l}</text>)}</g>); })()}
             </svg>)}
-          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>— {t.selected} · ╌ {t.solstice} / {t.winter} · ··· {t.equinox} · {t.legendPeaks} · {t.legendFit}</div>
+          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}><span style={{ color: "#ff9f1c" }}>☀</span> {t.sunNow} · — {t.selected} · ╌ {t.solstice} / {t.winter} · ··· {t.equinox} · {t.legendPeaks} · {t.legendFit}</div>
         </div>
 
         <div>
