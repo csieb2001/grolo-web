@@ -5,6 +5,7 @@ import { SunSection, type SunData } from "./sun";
 import { PowerFlow } from "./flow";
 import { explainSmart } from "./explain";
 import { YearCalendar, type CalData } from "./calendar";
+import { HeatSection, type HeatData } from "./heat";
 
 type Data = Partial<SunData> & {
   updated: string | null; device: string | null;
@@ -16,6 +17,7 @@ type Data = Partial<SunData> & {
   totals: { pv_kwh: number; out_kwh: number; since: string } | null;
   string_rank?: { string: number; kwh_24h: number | null; kwh_7d: number | null; kwh_30d: number | null }[];
   calendar?: CalData | null;
+  heatpump?: HeatData | null;
   periods?: { month: Period; year: Period; total: Period & { days: number; since: string | null } } | null;
   tariff?: { price_ct_kwh: number | null; feedin_ct_kwh: number; system_cost_eur: number; currency: string; updated: string } | null;
   shelly?: { updated: string; grid_w: number|null; household_w: number|null; out_w: number|null; target_w: number|null; setpoint_w: number|null; ok: boolean|null; enabled: boolean|null; host: string|null;
@@ -210,6 +212,7 @@ export default function Page() {
               <div className="muted" style={{ fontSize: 12.5, alignSelf: "center" }}>{t.costsHint}</div>
             </div>
           </section>); })()}
+        {data?.heatpump && <HeatSection d={data.heatpump} lang={lang} locale={locale} priceCt={data.tariff?.price_ct_kwh ?? 30} />}
         {data?.calendar && data.day && <YearCalendar d={data.calendar} lang={lang} today={data.day.today} setYear={setYear} priceCt={data.tariff?.price_ct_kwh ?? 30}
           setDay={(k) => { setDay(k); document.getElementById("sun-section")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} />}
         {data?.string_rank && data.string_rank.length > 0 && (() => {

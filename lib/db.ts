@@ -52,6 +52,20 @@ export function ensureSchema() {
       await sql`CREATE TABLE IF NOT EXISTS tariff (
         id smallint PRIMARY KEY DEFAULT 1, updated timestamptz NOT NULL, price_ct_kwh real NOT NULL, feedin_ct_kwh real, system_cost_eur real, currency text
       )`;
+      // Wärmepumpe (Wolf CHA über den lokalen WOLF Link). Die Zeitstempel sind dieselben wie bei samples,
+      // deshalb lässt sich der Verbrauch der Wärmepumpe direkt gegen die NEXA-Abgabe rechnen.
+      await sql`CREATE TABLE IF NOT EXISTS heat_samples (
+        ts timestamptz PRIMARY KEY,
+        hp_w real, heat_w real, flow_c real, return_c real, dhw_c real, outside_c real,
+        spread real, freq real, flow_lpm real, compressor smallint, mode smallint
+      )`;
+      // Tageswerte aus den Zählern der Wärmepumpe selbst (sie zählt Wärme und Strom je Tag und setzt um Mitternacht zurück)
+      await sql`CREATE TABLE IF NOT EXISTS heat_days (
+        day date PRIMARY KEY, heat_kwh real, el_kwh real, spf real
+      )`;
+      await sql`CREATE TABLE IF NOT EXISTS heat_state (
+        id smallint PRIMARY KEY DEFAULT 1, updated timestamptz NOT NULL, state jsonb NOT NULL
+      )`;
     })();
   }
   return ready;

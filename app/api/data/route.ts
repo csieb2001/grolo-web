@@ -142,6 +142,31 @@ export async function GET(req: NextRequest) {
     FROM d LEFT JOIN pk USING (day) ORDER BY d.day`;
   const modelDay = await sql`SELECT t, string, gti, expected_w FROM pv_model WHERE t >= ${dayBounds[0].start}::timestamptz - interval '1 hour' AND t < ${dayBounds[0].end}::timestamptz + interval '1 hour' ORDER BY t`;
 
+  // ---------------------------------------------------------------- Wärmepumpe
+  const heatState = await sql`SELECT updated, state FROM heat_state WHERE id = 1`;
+  const heatSeries = await sql`
+    SELECT to_timestamp(floor(extract(epoch FROM ts) / ${range.bucket}) * ${range.bucket}) AS t,
+           avg(hp_w) AS hp, avg(heat_w) AS heat, avg(flow_c) AS flow, avg(return_c) AS ret,
+           avg(dhw_c) AS dhw, avg(outside_c) AS outside, avg(freq) AS freq
+    FROM heat_samples WHERE ts > now() - make_interval(secs => ${range.seconds}) GROUP BY 1 ORDER BY 1`;
+  // Tageswerte der Wolf-Zähler, dazu der Anteil, den der NEXA im selben Moment decken konnte.
+  // heat_samples und samples tragen denselben Zeitstempel (beide kommen aus demselben Push), daher der direkte Join.
+  const heatDays = await sql`
+    WITH ns AS (SELECT ts, avg(out_w) AS outw, avg(pv_w) AS pv FROM samples WHERE ts > now() - interval '400 days' GROUP BY 1),
+    j AS (SELECT h.ts, h.hp_w, greatest(coalesce(ns.outw, 0), 0) AS outw, greatest(coalesce(ns.pv, 0), 0) AS pv
+          FROM heat_samples h LEFT JOIN ns USING (ts)
+          WHERE h.ts > now() - interval '400 days' AND h.hp_w IS NOT NULL),
+    mins AS (
+      SELECT date_trunc('minute', ts AT TIME ZONE ${TZ}) AS m, avg(hp_w) AS hp, avg(least(hp_w, outw)) AS solar,
+             -- Der vom NEXA gedeckte Teil wird im Verhältnis aufgeteilt, in dem die NEXA-Abgabe in diesem Moment
+             -- direkt aus den Modulen kam statt aus der Batterie.
+             avg(CASE WHEN outw > 0 THEN least(hp_w, outw) * least(pv, outw) / outw ELSE 0 END) AS direct
+      FROM j GROUP BY 1),
+    cov AS (SELECT m::date AS day, sum(hp) / 60000.0 AS hp_kwh, sum(solar) / 60000.0 AS solar_kwh,
+                   sum(direct) / 60000.0 AS direct_kwh, count(*) AS minutes FROM mins GROUP BY 1)
+    SELECT to_char(d.day, 'YYYY-MM-DD') AS day, d.heat_kwh, d.el_kwh, d.spf, cov.hp_kwh, cov.solar_kwh, cov.direct_kwh, cov.minutes
+    FROM heat_days d FULL JOIN cov ON cov.day = d.day ORDER BY 1`;
+
   const todayRow = daily.find((d) => d.day === todayKey);
   const l = latest[0];
   const num = (v: unknown) => (v == null ? null : Number(v));
@@ -176,6 +201,14 @@ export async function GET(req: NextRequest) {
     model_day: modelDay.map((r) => ({ t: r.t, string: Number(r.string), gti: num(r.gti), expected_w: num(r.expected_w) })),
     shelly: shelly[0] ? { updated: shelly[0].updated, grid_w: num(shelly[0].grid_w), household_w: num(shelly[0].household_w), out_w: num(shelly[0].out_w), target_w: num(shelly[0].target_w), setpoint_w: num(shelly[0].setpoint_w), ok: shelly[0].ok, enabled: shelly[0].enabled, host: shelly[0].host,
                           limited: shelly[0].limited ?? null, reason: shelly[0].reason ?? null, soc: num(shelly[0].soc), soc_limit: num(shelly[0].soc_limit), max_w: num(shelly[0].max_w) } : null,
+    heatpump: heatState[0] || heatDays.length ? {
+      updated: heatState[0]?.updated ?? null,
+      state: (heatState[0]?.state as Record<string, unknown>) ?? null,
+      series: heatSeries.map((r) => ({ t: r.t, hp: num(r.hp), heat: num(r.heat), flow: num(r.flow), ret: num(r.ret), dhw: num(r.dhw), outside: num(r.outside), freq: num(r.freq) })),
+      days: heatDays.map((r) => ({ day: String(r.day), heat_kwh: num(r.heat_kwh), el_kwh: num(r.el_kwh), spf: num(r.spf),
+                                   hp_kwh: num(r.hp_kwh), solar_kwh: num(r.solar_kwh), direct_kwh: num(r.direct_kwh),
+                                   minutes: r.minutes == null ? 0 : Number(r.minutes) })),
+    } : null,
     weather: {
       current: wcur[0] ? { ...wcur[0], id: undefined } : null,
       forecast: wfc.map((f) => ({ t: f.t, shortwave_radiation: num(f.shortwave_radiation), cloud_cover: num(f.cloud_cover), temperature: num(f.temperature), weather_code: f.weather_code })),

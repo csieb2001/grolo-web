@@ -1,12 +1,14 @@
 # GroLo web
 
-Password-protected live mirror of a Growatt NEXA 2000 balcony battery, hosted on Vercel. The local
+Password-protected live mirror of a Growatt NEXA 2000 balcony battery and a Wolf CHA heat pump, hosted on Vercel. The local
 [GroLo stack](https://github.com/csieb2001/grolo) pushes cleaned measurements and weather data every 30 s; this app
 stores them in Neon Postgres and renders a live power-flow schema (solar → NEXA/battery → home, grid ↔ home with a Shelly
 meter, animated like the energy-flow screens of the Anker SOLIX or Growatt apps), tiles, charts, daily energy figures and a
 **Costs and savings** section (saved today/month/year/total, grid cost, payback), a **Year calendar** (one tile per day coloured
 by PV yield, click opens the day; highlights: strongest/weakest day, highest peak, best self-sufficiency, best month, year so far)
-and a **Top panels** ranking, in English and German.
+a **Top panels** ranking and a **Heat pump** section (live tiles, heat output and COP, temperatures, heat and electricity per
+day with the performance factor, where the heat pump's electricity came from — straight from solar, from the battery or from
+the grid — plus heat cost, cost per kWh of heat and CO₂ against a gas boiler), in English and German.
 
 ```
 GroLo stack (LXC) ── web-push sidecar ──POST /api/ingest (Bearer token)──▶ Vercel ──▶ Neon Postgres
@@ -39,6 +41,13 @@ The push service in the stack needs `WEB_URL=https://grolo-web.vercel.app` and `
   "shelly": { "grid_w": 212.5, "household_w": 297.5, "out_w": 85.0, "target_w": 300, "setpoint_w": 20, "ok": true, "enabled": true, "host": "192.168.1.158",
               "limited": false, "reason": "ok", "soc": 48, "soc_limit": 8 },
   "tariff": { "price_ct_kwh": 32.5, "feedin_ct_kwh": 0, "system_cost_eur": 1500, "currency": "EUR" },
+  "heat": {
+    "ts": "2026-09-06T10:00:00Z",
+    "samples": [{ "ts": "2026-09-06T10:00:00Z", "hp_w": 1000, "heat_w": 5300, "flow_c": 52.5, "return_c": 51.2, "dhw_c": 49.6,
+                  "outside_c": 19.1, "spread": 1.3, "freq": 25, "flow_lpm": 26.7, "compressor": 1, "mode": 8 }],
+    "days": [{ "day": "2026-09-06", "heat_kwh": 24, "el_kwh": 7 }, { "day": "2026-09-05", "heat_kwh": 55, "el_kwh": 14, "spf": 3.9 }],
+    "state": { "mode_text": "Warmwasser", "compressor_text": "Betrieb", "cop": 5.3, "spf_year": 3.3, "heat_today": 24, "el_today": 7, "…": "…" }
+  },
   "info": { "device": "<serial>", "dongle_model": "GTSW0000", "dongle_sw": "4.0.2.6", "dongle_hw": "V1.0", "wifi_dbm": "-68" },
   "weather": {
     "ts": "2026-09-06T10:00:00Z",
@@ -51,6 +60,11 @@ The push service in the stack needs `WEB_URL=https://grolo-web.vercel.app` and `
   }
 }
 ```
+
+`heat` comes from the heat pump bridge in the stack: `samples` carry the **same timestamps as the NEXA samples**, which is
+what lets the site work out how much of the heat pump's draw the NEXA covered at that moment; `days` are the heat pump's own
+daily counters (today and the previous day, so a gap over midnight closes itself) and are upserted as the highest value seen
+per day; `state` is the current picture for the tiles, stored as one row.
 
 `weather.current` may also carry `sun_azimuth` / `sun_elevation`. `weather.site` is the location and panel orientation from
 the GroLo settings page (`names` = optional per-string labels, shown everywhere instead of “String n”), `weather.model` the expected power per string and hour (transposed Open-Meteo irradiance).
@@ -66,7 +80,10 @@ from minute averages, including `grid_kwh`/`feedin_kwh`/`house_kwh` from the She
 house, grid import and export since the start of the month and year and in total, with `days` and `since` for the payback
 estimate), `tariff` (price, feed-in rate, system price; the page assumes 30 ct/kWh when missing), `shelly` (controller state
 incl. `reason`), `calendar` (daily PV/house/grid/AC-charging kWh, minutes with data, PV peak and its time for every day of the
-selected year, plus the years with data), `string_rank` (kWh per PV input over 24 h, 7 and 30 days), `info`, `weather { current, forecast (next 48 h), history }` and for the strings
+selected year, plus the years with data), `string_rank` (kWh per PV input over 24 h, 7 and 30 days), `info`, `weather { current, forecast (next 48 h), history }`,
+`heatpump` (`state`, `series` bucketed like `series`, and `days` with the heat pump's own `heat_kwh`/`el_kwh`/`spf` plus
+`hp_kwh`, `solar_kwh` and `direct_kwh` — the part the NEXA covered and the part of that which came straight from the panels
+rather than the battery) and for the strings
 section `site`, `day` (bounds of the selected day, default today), `string_peaks` (daily peak per string, 30 days),
 `strings_day` (5-minute power per string of the selected day), `heat` (hourly mean per string and day, 30 days),
 `model_day` (expected power per string of the selected day) and `alltime` (per string and total: highest 30-second sample

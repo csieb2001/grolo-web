@@ -13,6 +13,10 @@ type Site = { name?: string | null; lat?: number | null; lon?: number | null; st
 type ModelRow = { t: string; string: number; gti?: number | null; expected_w?: number | null };
 type ShellyState = { grid_w?: number|null; household_w?: number|null; out_w?: number|null; target_w?: number|null; setpoint_w?: number|null; ok?: boolean|null; enabled?: boolean|null; host?: string|null;
   limited?: boolean|null; reason?: string|null; soc?: number|null; soc_limit?: number|null; max_w?: number|null };
+type HeatSample = { ts: string; hp_w?: number|null; heat_w?: number|null; flow_c?: number|null; return_c?: number|null; dhw_c?: number|null;
+  outside_c?: number|null; spread?: number|null; freq?: number|null; flow_lpm?: number|null; compressor?: number|null; mode?: number|null };
+type HeatDay = { day: string; heat_kwh?: number|null; el_kwh?: number|null; spf?: number|null };
+type Heat = { ts?: string; samples?: HeatSample[]; days?: HeatDay[]; state?: Record<string, unknown> };
 type Tariff = { price_ct_kwh?: number|null; feedin_ct_kwh?: number|null; system_cost_eur?: number|null; currency?: string|null; updated?: number|null };
 type Weather = { ts?: string; current?: WeatherCurrent & { sun_azimuth?: number | null; sun_elevation?: number | null }; forecast?: WeatherForecast[]; site?: Site; model?: ModelRow[]; fit?: Record<string, unknown> | null; advice?: Record<string, unknown> | null };
 
@@ -30,7 +34,7 @@ export async function POST(req: NextRequest) {
   if (!process.env.INGEST_TOKEN || auth !== `Bearer ${process.env.INGEST_TOKEN}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  let body: { samples?: Sample[]; info?: Record<string, unknown> & { device?: string }; weather?: Weather; shelly?: ShellyState; tariff?: Tariff };
+  let body: { samples?: Sample[]; info?: Record<string, unknown> & { device?: string }; weather?: Weather; shelly?: ShellyState; tariff?: Tariff; heat?: Heat };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "bad json" }, { status: 400 }); }
   await ensureSchema();
   // Samples gebündelt einfügen: eine Abfrage je 100 Zeilen statt einer je Zeile (jede Abfrage ist ein HTTP-Roundtrip zu Neon;
@@ -124,5 +128,38 @@ export async function POST(req: NextRequest) {
         system_cost_eur = EXCLUDED.system_cost_eur, currency = EXCLUDED.currency`;
     tariff = 1;
   }
-  return NextResponse.json({ ok: true, inserted: n, weather, tariff });
+  // Wärmepumpe: Samples wie die NEXA-Samples gebündelt, Tageswerte als Höchststand (die Zähler wachsen im Tag nur),
+  // der aktuelle Stand als eine Zeile.
+  let heat = 0;
+  const h = body.heat;
+  if (h && typeof h === "object") {
+    const hs = (h.samples || []).slice(0, 500).filter((s) => s.ts);
+    const HCOLS = ["ts", "hp_w", "heat_w", "flow_c", "return_c", "dhw_c", "outside_c", "spread", "freq", "flow_lpm", "compressor", "mode"];
+    for (let i = 0; i < hs.length; i += 100) {
+      const chunk = hs.slice(i, i + 100);
+      const params: unknown[] = []; const tuples: string[] = [];
+      for (const s of chunk) {
+        const row = [s.ts, s.hp_w ?? null, s.heat_w ?? null, s.flow_c ?? null, s.return_c ?? null, s.dhw_c ?? null,
+          s.outside_c ?? null, s.spread ?? null, s.freq ?? null, s.flow_lpm ?? null, s.compressor ?? null, s.mode ?? null];
+        tuples.push("(" + row.map((_, j) => `$${params.length + j + 1}` + (j === 0 ? "::timestamptz" : "")).join(", ") + ")");
+        params.push(...row);
+      }
+      const upd = HCOLS.slice(1).map((c) => `${c} = EXCLUDED.${c}`).join(", ");
+      await sql.query(`INSERT INTO heat_samples (${HCOLS.join(", ")}) VALUES ${tuples.join(", ")} ON CONFLICT (ts) DO UPDATE SET ${upd}`, params);
+      heat += chunk.length;
+    }
+    for (const d of (h.days || []).slice(0, 40)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(d.day || "")) continue;
+      await sql`INSERT INTO heat_days (day, heat_kwh, el_kwh, spf) VALUES (${d.day}::date, ${d.heat_kwh ?? null}, ${d.el_kwh ?? null}, ${d.spf ?? null})
+        ON CONFLICT (day) DO UPDATE SET heat_kwh = greatest(heat_days.heat_kwh, EXCLUDED.heat_kwh), el_kwh = greatest(heat_days.el_kwh, EXCLUDED.el_kwh),
+          spf = coalesce(EXCLUDED.spf, heat_days.spf)`;
+      heat++;
+    }
+    if (h.state && typeof h.state === "object") {
+      await sql`INSERT INTO heat_state (id, updated, state) VALUES (1, now(), ${JSON.stringify(h.state)}::jsonb)
+        ON CONFLICT (id) DO UPDATE SET updated = now(), state = EXCLUDED.state`;
+      heat++;
+    }
+  }
+  return NextResponse.json({ ok: true, inserted: n, weather, tariff, heat });
 }
