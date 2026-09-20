@@ -12,10 +12,18 @@ export type Room = {
   nodes?: number[]; sensors?: number[]; thermostats?: number[]; mode_text?: string | null;
   setpoint_split?: number[] | null;
 };
+export type RoomDay = { day: string; room: string; min: number | null; max: number | null; avg: number | null;
+  hum: number | null; n: number; below: number; hum60: number };
+export type RoomPeriod = { period: "today" | "month" | "year" | string; room: string; min: number | null;
+  max: number | null; avg: number | null; hum: number | null; below_share: number | null;
+  hum60_share: number | null; n: number; days: number };
 export type RoomsData = {
   updated: string | null;
   rooms: Record<string, Room>;
   series: { t: string; room: string; temp: number | null; setp: number | null; hum: number | null }[];
+  days?: RoomDay[];
+  periods?: RoomPeriod[];
+  ranks?: { room: string; cold_days: number; warm_days: number }[];
 };
 
 const L = {
@@ -30,6 +38,15 @@ const L = {
     sensor: "sensor", thermostat: "thermostat", fallback: "sensor unavailable, thermostat used",
     battery: "battery", none: "No rooms yet. Pair a tado° X device on the settings page of the stack.",
     offline: "offline", split: "thermostats disagree",
+    long: "Over time", longHint: "Daily figures per room. The averages say how the house is really kept; the two counters say which room is chronically the problem — and a room that is coldest again and again is a balancing job, not a thermostat fault.",
+    today: "today", month: "this month", year: "this year",
+    pAvg: "Average", pCold: "Coldest", pWarm: "Warmest", pSpread: "Spread", pDays: "{d} days",
+    tblRoom: "Room", tblAvg: "Ø °C", tblMin: "Lowest", tblMax: "Highest", tblHum: "Ø humidity",
+    tblBelow: "Below target", tblBelowT: "share of the time more than half a degree below its own target",
+    tblHum60: "Over 60 %", tblHum60T: "share of the time above 60 % humidity — the threshold for mould on cold walls",
+    tblCold: "Coldest on", tblWarm: "Warmest on", days: "d",
+    daily: "Daily averages per room", dailyHint: "One point per room and day. Early on this is a short line; it becomes the picture of the heating season.",
+    nolong: "No daily figures yet — they start with the first full day.",
   },
   de: {
     title: "Räume", hint: "tado° X lokal über Thread gelesen — keine Cloud dazwischen. Wo ein Funkfühler hängt, zählt dessen Temperatur: ein Thermostat sitzt am Heizkörper und misst dessen Wärmestau mit.",
@@ -42,6 +59,15 @@ const L = {
     sensor: "Fühler", thermostat: "Thermostat", fallback: "Fühler nicht erreichbar, Thermostat genommen",
     battery: "Batterie", none: "Noch keine Räume. Auf der Einstellungsseite des Stacks ein tado°-X-Gerät koppeln.",
     offline: "offline", split: "Thermostate weichen ab",
+    long: "Über die Zeit", longHint: "Tageswerte je Raum. Die Mittel sagen, wie das Haus wirklich gefahren wird; die beiden Zähler sagen, welcher Raum das chronische Problem ist — und ein Raum, der immer wieder der kälteste ist, ist ein Abgleich und kein Thermostatfehler.",
+    today: "heute", month: "dieser Monat", year: "dieses Jahr",
+    pAvg: "Mittel", pCold: "Kältester", pWarm: "Wärmster", pSpread: "Spreizung", pDays: "{d} Tage",
+    tblRoom: "Raum", tblAvg: "Ø °C", tblMin: "Tiefster", tblMax: "Höchster", tblHum: "Ø Feuchte",
+    tblBelow: "Unter Soll", tblBelowT: "Anteil der Zeit, in der der Raum mehr als ein halbes Grad unter seinem eigenen Sollwert lag",
+    tblHum60: "Über 60 %", tblHum60T: "Anteil der Zeit über 60 % Luftfeuchte — die Schwelle für Schimmel an kalten Wänden",
+    tblCold: "Kältester an", tblWarm: "Wärmster an", days: "T",
+    daily: "Tagesmittel je Raum", dailyHint: "Ein Punkt je Raum und Tag. Anfangs ist das ein kurzer Strich; daraus wird das Bild der Heizsaison.",
+    nolong: "Noch keine Tageswerte — sie beginnen mit dem ersten vollen Tag.",
   },
 };
 
@@ -81,7 +107,30 @@ export function RoomsSection({ d, lang, locale }: { d: RoomsData | null; lang: "
   };
   const tempRows = pivot("temp");
   const humRows = pivot("hum");
+  // Die Achsengrenzen selbst rechnen: Recharts' Zeichenketten-Domains („dataMin - 0.5") haben hier
+  // Unsinn ergeben, weil in den Zeilen auch nicht-numerische Spalten stehen.
+  const allTemps = (d?.series || []).map((p) => p.temp).filter((v): v is number => v != null);
+  const tempDomain: [number, number] = allTemps.length
+    ? [Math.floor(Math.min(...allTemps) * 2) / 2 - 0.5, Math.ceil(Math.max(...allTemps) * 2) / 2 + 0.5]
+    : [18, 24];
   const label = (k: string) => d?.rooms[k]?.name || k;
+
+  // ---------------------------------------------------------------- Langzeit
+  const periods = d?.periods || [];
+  const ranks = d?.ranks || [];
+  const year = periods.filter((p) => p.period === "year");
+  // Tagesmittel: eine Zeile je Tag mit einer Spalte je Raum, wie bei den Kurzverläufen
+  const dayMap = new Map<string, Record<string, number | string | null>>();
+  for (const r of d?.days || []) {
+    const row = dayMap.get(r.day) || { day: r.day, label: new Date(r.day + "T12:00:00").toLocaleDateString(locale, { day: "2-digit", month: "2-digit" }) };
+    row[r.room] = r.avg;
+    dayMap.set(r.day, row);
+  }
+  const dayRows = [...dayMap.values()];
+  const dayAvgs = (d?.days || []).map((r) => r.avg).filter((v): v is number => v != null);
+  const dayDomain: [number, number] = dayAvgs.length
+    ? [Math.floor(Math.min(...dayAvgs) * 2) / 2 - 0.5, Math.ceil(Math.max(...dayAvgs) * 2) / 2 + 0.5]
+    : [18, 24];
 
   return (
     <section>
@@ -126,7 +175,7 @@ export function RoomsSection({ d, lang, locale }: { d: RoomsData | null; lang: "
             <LineChart data={tempRows}>
               <CartesianGrid stroke="#2c3235" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#8e8e8e" }} minTickGap={40} />
-              <YAxis tick={{ fontSize: 11, fill: "#8e8e8e" }} width={44} unit=" °C" domain={["dataMin - 0.5", "dataMax + 0.5"]} />
+              <YAxis tick={{ fontSize: 11, fill: "#8e8e8e" }} width={44} unit=" °C" domain={tempDomain} allowDecimals />
               <Tooltip {...tip} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               {keys.map((k, i) => (
@@ -155,6 +204,81 @@ export function RoomsSection({ d, lang, locale }: { d: RoomsData | null; lang: "
           </ResponsiveContainer>
         </div>
       </>}
+
+      {periods.length > 0 && <>
+        <h3 style={{ fontSize: 13, margin: "18px 0 2px", color: "var(--muted)", fontWeight: 600 }}>{t.long}</h3>
+        <p className="muted" style={{ margin: "0 0 8px", fontSize: 12 }}>{t.longHint}</p>
+
+        <div className="tiles">
+          {(["today", "month", "year"] as const).map((per) => {
+            const rows = periods.filter((p) => p.period === per && p.avg != null);
+            if (!rows.length) return null;
+            const avg = rows.reduce((a, r) => a + (r.avg as number), 0) / rows.length;
+            const cold = rows.reduce((a, r) => (r.avg as number) < (a.avg as number) ? r : a);
+            const warm = rows.reduce((a, r) => (r.avg as number) > (a.avg as number) ? r : a);
+            const days = Math.max(...rows.map((r) => r.days));
+            return (
+              <div key={per} className="tile">
+                <div className="k">{t[per]}</div>
+                <div className="v" style={{ color: "var(--house)" }}>{n1(avg)}<small>°C</small></div>
+                <div className="s">{t.pCold} {label(cold.room)} {n1(cold.avg)} °C</div>
+                <div className="s">{t.pWarm} {label(warm.room)} {n1(warm.avg)} °C</div>
+                <div className="s">{t.pSpread} {n1((warm.avg as number) - (cold.avg as number))} K · {t.pDays.replace("{d}", String(days))}</div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="tablewrap" style={{ marginTop: 12 }}>
+          <table>
+            <thead><tr>
+              <th>{t.tblRoom}</th><th>{t.tblAvg}</th><th>{t.tblMin}</th><th>{t.tblMax}</th><th>{t.tblHum}</th>
+              <th title={t.tblBelowT}>{t.tblBelow}</th><th title={t.tblHum60T}>{t.tblHum60}</th>
+              <th>{t.tblCold}</th><th>{t.tblWarm}</th>
+            </tr></thead>
+            <tbody>
+              {year.slice().sort((a, b) => (a.avg ?? 0) - (b.avg ?? 0)).map((r) => {
+                const rank = ranks.find((x) => x.room === r.room);
+                const pct = (v: number | null | undefined) => v == null ? "–" : `${(v * 100).toFixed(0)} %`;
+                return (
+                  <tr key={r.room}>
+                    <td><b>{label(r.room)}</b></td>
+                    <td>{n1(r.avg)} °C</td>
+                    <td style={{ color: "var(--soc)" }}>{n1(r.min)} °C</td>
+                    <td style={{ color: "var(--red)" }}>{n1(r.max)} °C</td>
+                    <td>{n1(r.hum)} %</td>
+                    <td style={{ color: (r.below_share ?? 0) > 0.25 ? "var(--house)" : undefined }}>{pct(r.below_share)}</td>
+                    <td style={{ color: (r.hum60_share ?? 0) > 0.5 ? "var(--house)" : undefined }}>{pct(r.hum60_share)}</td>
+                    <td className="muted">{rank?.cold_days ? `${rank.cold_days} ${t.days}` : "–"}</td>
+                    <td className="muted">{rank?.warm_days ? `${rank.warm_days} ${t.days}` : "–"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {dayRows.length > 1 && <>
+          <h3 style={{ fontSize: 13, margin: "16px 0 2px", color: "var(--muted)", fontWeight: 600 }}>{t.daily}</h3>
+          <p className="muted" style={{ margin: "0 0 6px", fontSize: 12 }}>{t.dailyHint}</p>
+          <div className="chart">
+            <ResponsiveContainer>
+              <LineChart data={dayRows}>
+                <CartesianGrid stroke="#2c3235" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#8e8e8e" }} minTickGap={24} />
+                <YAxis tick={{ fontSize: 11, fill: "#8e8e8e" }} width={44} unit=" °C" domain={dayDomain} allowDecimals />
+                <Tooltip {...tip} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                {keys.map((k, i) => (
+                  <Line key={k} type="monotone" dataKey={k} name={label(k)} stroke={COLORS[i % COLORS.length]}
+                        strokeWidth={1.6} dot={false} connectNulls />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </>}
+      </>}
+      {!periods.length && <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>{t.nolong}</p>}
     </section>
   );
 }

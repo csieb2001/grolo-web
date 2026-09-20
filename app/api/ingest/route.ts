@@ -3,7 +3,8 @@ import { sql, ensureSchema } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;   // Sekunden; große Nachholpuffer des Push-Dienstes brauchen mehr als die 10 s Standard
+export const maxDuration = 60;
+const TZ = "Europe/Berlin";   // Sekunden; große Nachholpuffer des Push-Dienstes brauchen mehr als die 10 s Standard
 
 type WeatherCurrent = { temperature?: number | null; cloud_cover?: number | null; shortwave_radiation?: number | null; direct_radiation?: number | null; diffuse_radiation?: number | null;
   wind_speed?: number | null; weather_code?: number | null; is_day?: number | null; condition_en?: string | null; condition_de?: string | null;
@@ -209,6 +210,34 @@ export async function POST(req: NextRequest) {
       await sql.query(`INSERT INTO room_samples (ts, room, temp_c, setpoint_c, humidity_pct) VALUES ${tuples.join(", ")}
         ON CONFLICT (ts, room) DO UPDATE SET temp_c = EXCLUDED.temp_c, setpoint_c = EXCLUDED.setpoint_c, humidity_pct = EXCLUDED.humidity_pct`, params);
     }
+    // Tagesbilanz fortschreiben: je Raum eine Zeile pro Tag, die mit jedem Push wächst.
+    const today = new Date().toLocaleDateString("sv-SE", { timeZone: TZ });   // sv-SE liefert YYYY-MM-DD
+    const dayRows = Object.entries(rm).filter(([, r]) => r && r.temp_c != null);
+    if (dayRows.length) {
+      const params: unknown[] = []; const tuples: string[] = [];
+      for (const [key, r] of dayRows) {
+        const temp = r.temp_c as number;
+        const hum = r.humidity_pct ?? null;
+        const set = r.setpoint_c ?? null;
+        const row = [today, key, temp, temp, temp, 1,
+                     hum ?? 0, hum == null ? 0 : 1,
+                     set ?? 0, set == null ? 0 : 1,
+                     set != null && temp < set - 0.5 ? 1 : 0,
+                     hum != null && hum > 60 ? 1 : 0];
+        tuples.push("(" + row.map((_, j) => `$${params.length + j + 1}` + (j === 0 ? "::date" : "")).join(", ") + ")");
+        params.push(...row);
+      }
+      await sql.query(`INSERT INTO room_days (day, room, min_c, max_c, sum_c, n, sum_hum, n_hum, sum_set, n_set, below_n, hum60_n)
+        VALUES ${tuples.join(", ")}
+        ON CONFLICT (day, room) DO UPDATE SET
+          min_c = least(room_days.min_c, EXCLUDED.min_c), max_c = greatest(room_days.max_c, EXCLUDED.max_c),
+          sum_c = room_days.sum_c + EXCLUDED.sum_c, n = room_days.n + 1,
+          sum_hum = room_days.sum_hum + EXCLUDED.sum_hum, n_hum = room_days.n_hum + EXCLUDED.n_hum,
+          sum_set = room_days.sum_set + EXCLUDED.sum_set, n_set = room_days.n_set + EXCLUDED.n_set,
+          below_n = room_days.below_n + EXCLUDED.below_n, hum60_n = room_days.hum60_n + EXCLUDED.hum60_n`, params);
+    }
+    // Die Rohwerte werden nur für die Kurzverläufe gebraucht; älteres verdichtet room_days ohnehin.
+    if (Math.random() < 0.02) await sql`DELETE FROM room_samples WHERE ts < now() - interval '30 days'`;
     rooms = Object.keys(rm).length;
   }
   return NextResponse.json({ ok: true, inserted: n, weather, tariff, heat, forecast, rooms });

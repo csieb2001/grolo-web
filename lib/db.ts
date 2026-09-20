@@ -86,6 +86,18 @@ export function ensureSchema() {
         ts timestamptz NOT NULL, room text NOT NULL, temp_c real, setpoint_c real, humidity_pct real,
         PRIMARY KEY (ts, room)
       )`;
+      // Tagesbilanz je Raum. Die Rohwerte kommen alle 30 s und wachsen im Jahr auf Millionen Zeilen; für
+      // „welcher Raum war im März der kälteste" braucht niemand die Sekunde. Summe und Anzahl statt Mittel,
+      // damit sich der Tag über den Tag hinweg fortschreiben lässt.
+      await sql`CREATE TABLE IF NOT EXISTS room_days (
+        day date NOT NULL, room text NOT NULL,
+        min_c real, max_c real, sum_c double precision DEFAULT 0, n integer DEFAULT 0,
+        sum_hum double precision DEFAULT 0, n_hum integer DEFAULT 0,
+        sum_set double precision DEFAULT 0, n_set integer DEFAULT 0,
+        below_n integer DEFAULT 0, hum60_n integer DEFAULT 0,
+        PRIMARY KEY (day, room)
+      )`;
+      await sql`CREATE INDEX IF NOT EXISTS room_days_day ON room_days (day DESC)`;
     })();
   }
   return ready;

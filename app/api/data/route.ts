@@ -185,6 +185,40 @@ export async function GET(req: NextRequest) {
 
   const forecastRow = await sql`SELECT updated, data FROM forecast WHERE id = 1`;
   const roomsRow = await sql`SELECT updated, data FROM rooms WHERE id = 1`;
+  // Langzeit: Tagesbilanz je Raum, dazu drei Zeiträume als fertige Kennzahlen. Gerechnet wird in SQL,
+  // weil die Website sonst ein Jahr Tageszeilen durch den Browser schieben müsste.
+  const roomDays = await sql`
+    SELECT to_char(day, 'YYYY-MM-DD') AS day, room, min_c, max_c,
+           CASE WHEN n > 0 THEN sum_c / n END AS avg_c,
+           CASE WHEN n_hum > 0 THEN sum_hum / n_hum END AS avg_hum,
+           n, below_n, hum60_n
+    FROM room_days WHERE day >= date_trunc('year', now() AT TIME ZONE ${TZ})::date ORDER BY day, room`;
+  const roomPeriods = await sql`
+    WITH p AS (
+      SELECT 'today' AS period, * FROM room_days WHERE day = (now() AT TIME ZONE ${TZ})::date
+      UNION ALL SELECT 'month', * FROM room_days WHERE day >= date_trunc('month', now() AT TIME ZONE ${TZ})::date
+      UNION ALL SELECT 'year', * FROM room_days WHERE day >= date_trunc('year', now() AT TIME ZONE ${TZ})::date
+    )
+    SELECT period, room, min(min_c) AS min_c, max(max_c) AS max_c,
+           sum(sum_c) / nullif(sum(n), 0) AS avg_c,
+           sum(sum_hum) / nullif(sum(n_hum), 0) AS avg_hum,
+           sum(below_n)::float / nullif(sum(n), 0) AS below_share,
+           sum(hum60_n)::float / nullif(sum(n_hum), 0) AS hum60_share,
+           sum(n) AS n, count(DISTINCT day) AS days
+    FROM p GROUP BY period, room`;
+  // Wie oft ein Raum der kälteste des Tages war – das trifft den chronischen Problemraum besser als ein Mittel
+  const roomColdest = await sql`
+    WITH d AS (
+      SELECT day, room, sum_c / nullif(n, 0) AS avg_c FROM room_days
+      WHERE day >= date_trunc('year', now() AT TIME ZONE ${TZ})::date AND n > 0
+    ), r AS (
+      SELECT day, room, avg_c,
+             rank() OVER (PARTITION BY day ORDER BY avg_c ASC) AS cold,
+             rank() OVER (PARTITION BY day ORDER BY avg_c DESC) AS warm
+      FROM d
+    )
+    SELECT room, count(*) FILTER (WHERE cold = 1) AS cold_days, count(*) FILTER (WHERE warm = 1) AS warm_days
+    FROM r GROUP BY room`;
   const roomSeries = await sql`
     SELECT to_timestamp(floor(extract(epoch FROM ts) / ${range.bucket}) * ${range.bucket}) AS t, room,
            avg(temp_c) AS temp, avg(setpoint_c) AS setp, avg(humidity_pct) AS hum
@@ -242,6 +276,13 @@ export async function GET(req: NextRequest) {
       updated: roomsRow[0].updated,
       rooms: roomsRow[0].data as Record<string, unknown>,
       series: roomSeries.map((r) => ({ t: r.t, room: String(r.room), temp: num(r.temp), setp: num(r.setp), hum: num(r.hum) })),
+      days: roomDays.map((r) => ({ day: String(r.day), room: String(r.room), min: num(r.min_c), max: num(r.max_c),
+                                   avg: num(r.avg_c), hum: num(r.avg_hum), n: Number(r.n),
+                                   below: Number(r.below_n), hum60: Number(r.hum60_n) })),
+      periods: roomPeriods.map((r) => ({ period: String(r.period), room: String(r.room), min: num(r.min_c), max: num(r.max_c),
+                                         avg: num(r.avg_c), hum: num(r.avg_hum), below_share: num(r.below_share),
+                                         hum60_share: num(r.hum60_share), n: Number(r.n), days: Number(r.days) })),
+      ranks: roomColdest.map((r) => ({ room: String(r.room), cold_days: Number(r.cold_days), warm_days: Number(r.warm_days) })),
     } : null,
     weather: {
       current: wcur[0] ? { ...wcur[0], id: undefined } : null,
