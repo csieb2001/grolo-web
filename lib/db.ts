@@ -66,6 +66,26 @@ export function ensureSchema() {
       await sql`CREATE TABLE IF NOT EXISTS heat_state (
         id smallint PRIMARY KEY DEFAULT 1, updated timestamptz NOT NULL, state jsonb NOT NULL
       )`;
+      // Ein Datensatz je beendetem Verdichterlauf. Die Tageszähler sagen, wie oft getaktet wird; erst der
+      // einzelne Takt sagt, wie: Laufzeit am Stück, Pause davor und bei welcher Außentemperatur.
+      await sql`CREATE TABLE IF NOT EXISTS heat_cycles (
+        ts timestamptz PRIMARY KEY, started timestamptz, minutes real, pause_min real, mode text,
+        t_out real, freq real, freq_max real, flow_c real, kwh real, cop real, defrost smallint
+      )`;
+      await sql`CREATE INDEX IF NOT EXISTS heat_cycles_ts ON heat_cycles (ts DESC)`;
+      // Jahresprognose des Sidecars forecast: eine Zeile, komplett als JSON. Die Rechnung passiert dort,
+      // die Website zeigt sie nur – so steht auf Grafana, Einstellungsseite und Website dieselbe Zahl.
+      await sql`CREATE TABLE IF NOT EXISTS forecast (
+        id smallint PRIMARY KEY DEFAULT 1, updated timestamptz NOT NULL, data jsonb NOT NULL
+      )`;
+      // Räume (tado X, lokal über Matter): der aktuelle Stand als eine Zeile, dazu eine Zeitreihe je Raum
+      await sql`CREATE TABLE IF NOT EXISTS rooms (
+        id smallint PRIMARY KEY DEFAULT 1, updated timestamptz NOT NULL, data jsonb NOT NULL
+      )`;
+      await sql`CREATE TABLE IF NOT EXISTS room_samples (
+        ts timestamptz NOT NULL, room text NOT NULL, temp_c real, setpoint_c real, humidity_pct real,
+        PRIMARY KEY (ts, room)
+      )`;
     })();
   }
   return ready;

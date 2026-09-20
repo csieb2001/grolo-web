@@ -167,6 +167,29 @@ export async function GET(req: NextRequest) {
     SELECT to_char(d.day, 'YYYY-MM-DD') AS day, d.heat_kwh, d.el_kwh, d.spf, cov.hp_kwh, cov.solar_kwh, cov.direct_kwh, cov.minutes
     FROM heat_days d FULL JOIN cov ON cov.day = d.day ORDER BY 1`;
 
+  // Taktung: aus den einzelnen Verdichterläufen die drei Sichten, die die Frage beantworten – wie lang
+  // laufen die Takte, bei welcher Außentemperatur passiert das Kurztakten, und wie geht es über die Tage.
+  const cycleBuckets = await sql`
+    SELECT CASE WHEN minutes < 10 THEN 0 WHEN minutes < 20 THEN 10 WHEN minutes < 30 THEN 20
+                WHEN minutes < 60 THEN 30 ELSE 60 END AS lo,
+           CASE WHEN mode = 'ww' THEN 'ww' ELSE 'hz' END AS mode, count(*) AS n
+    FROM heat_cycles WHERE ts > now() - interval '14 days' GROUP BY 1, 2 ORDER BY 1`;
+  const cycleTemp = await sql`
+    SELECT floor(t_out / 2) * 2 AS t, count(*) AS n,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY minutes) AS med
+    FROM heat_cycles WHERE ts > now() - interval '14 days' AND t_out IS NOT NULL GROUP BY 1 ORDER BY 1`;
+  const cycleDays = await sql`
+    SELECT to_char((ts AT TIME ZONE ${TZ})::date, 'YYYY-MM-DD') AS day, count(*) AS n,
+           percentile_cont(0.5) WITHIN GROUP (ORDER BY minutes) AS med
+    FROM heat_cycles WHERE ts > now() - interval '30 days' GROUP BY 1 ORDER BY 1`;
+
+  const forecastRow = await sql`SELECT updated, data FROM forecast WHERE id = 1`;
+  const roomsRow = await sql`SELECT updated, data FROM rooms WHERE id = 1`;
+  const roomSeries = await sql`
+    SELECT to_timestamp(floor(extract(epoch FROM ts) / ${range.bucket}) * ${range.bucket}) AS t, room,
+           avg(temp_c) AS temp, avg(setpoint_c) AS setp, avg(humidity_pct) AS hum
+    FROM room_samples WHERE ts > now() - make_interval(secs => ${range.seconds}) GROUP BY 1, 2 ORDER BY 1`;
+
   const todayRow = daily.find((d) => d.day === todayKey);
   const l = latest[0];
   const num = (v: unknown) => (v == null ? null : Number(v));
@@ -208,6 +231,17 @@ export async function GET(req: NextRequest) {
       days: heatDays.map((r) => ({ day: String(r.day), heat_kwh: num(r.heat_kwh), el_kwh: num(r.el_kwh), spf: num(r.spf),
                                    hp_kwh: num(r.hp_kwh), solar_kwh: num(r.solar_kwh), direct_kwh: num(r.direct_kwh),
                                    minutes: r.minutes == null ? 0 : Number(r.minutes) })),
+      cycles: {
+        buckets: cycleBuckets.map((r) => ({ lo: Number(r.lo), mode: String(r.mode), n: Number(r.n) })),
+        temp: cycleTemp.map((r) => ({ t: Number(r.t), n: Number(r.n), med: num(r.med) })),
+        days: cycleDays.map((r) => ({ day: String(r.day), n: Number(r.n), med: num(r.med) })),
+      },
+    } : null,
+    forecast: forecastRow[0] ? { ...(forecastRow[0].data as Record<string, unknown>), stored: forecastRow[0].updated } : null,
+    rooms: roomsRow[0] ? {
+      updated: roomsRow[0].updated,
+      rooms: roomsRow[0].data as Record<string, unknown>,
+      series: roomSeries.map((r) => ({ t: r.t, room: String(r.room), temp: num(r.temp), setp: num(r.setp), hum: num(r.hum) })),
     } : null,
     weather: {
       current: wcur[0] ? { ...wcur[0], id: undefined } : null,

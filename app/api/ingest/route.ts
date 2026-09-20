@@ -16,7 +16,12 @@ type ShellyState = { grid_w?: number|null; household_w?: number|null; out_w?: nu
 type HeatSample = { ts: string; hp_w?: number|null; heat_w?: number|null; flow_c?: number|null; return_c?: number|null; dhw_c?: number|null;
   outside_c?: number|null; spread?: number|null; freq?: number|null; flow_lpm?: number|null; compressor?: number|null; mode?: number|null };
 type HeatDay = { day: string; heat_kwh?: number|null; el_kwh?: number|null; spf?: number|null };
-type Heat = { ts?: string; samples?: HeatSample[]; days?: HeatDay[]; state?: Record<string, unknown> };
+type HeatCycle = { start?: number|null; end?: number|null; min?: number|null; pause_min?: number|null; mode?: string|null;
+  t_out?: number|null; freq?: number|null; freq_max?: number|null; flow_c?: number|null; kwh?: number|null; cop?: number|null; defrost?: number|null };
+type Heat = { ts?: string; samples?: HeatSample[]; days?: HeatDay[]; cycles?: HeatCycle[]; state?: Record<string, unknown> };
+type Room = { name?: string; temp_c?: number|null; setpoint_c?: number|null; humidity_pct?: number|null;
+  temp_source?: string|null; temp_fallback?: boolean|null; radiator_offset_k?: number|null;
+  battery_level?: number|null; battery_text?: string|null; available?: boolean|null; nodes?: number[]; mode_text?: string|null };
 type Tariff = { price_ct_kwh?: number|null; feedin_ct_kwh?: number|null; system_cost_eur?: number|null; currency?: string|null; updated?: number|null };
 type Weather = { ts?: string; current?: WeatherCurrent & { sun_azimuth?: number | null; sun_elevation?: number | null }; forecast?: WeatherForecast[]; site?: Site; model?: ModelRow[]; fit?: Record<string, unknown> | null; advice?: Record<string, unknown> | null };
 
@@ -34,7 +39,8 @@ export async function POST(req: NextRequest) {
   if (!process.env.INGEST_TOKEN || auth !== `Bearer ${process.env.INGEST_TOKEN}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  let body: { samples?: Sample[]; info?: Record<string, unknown> & { device?: string }; weather?: Weather; shelly?: ShellyState; tariff?: Tariff; heat?: Heat };
+  let body: { samples?: Sample[]; info?: Record<string, unknown> & { device?: string }; weather?: Weather; shelly?: ShellyState; tariff?: Tariff; heat?: Heat;
+              forecast?: Record<string, unknown>; rooms?: Record<string, Room> };
   try { body = await req.json(); } catch { return NextResponse.json({ error: "bad json" }, { status: 400 }); }
   await ensureSchema();
   // Samples gebündelt einfügen: eine Abfrage je 100 Zeilen statt einer je Zeile (jede Abfrage ist ein HTTP-Roundtrip zu Neon;
@@ -155,11 +161,55 @@ export async function POST(req: NextRequest) {
           spf = coalesce(EXCLUDED.spf, heat_days.spf)`;
       heat++;
     }
+    // Takte: Unix-Sekunden vom Sidecar, Schlüssel ist das Ende des Laufs. Doppelte Lieferungen (Nachholpuffer)
+    // laufen ins ON CONFLICT und ändern nichts.
+    const hc = (h.cycles || []).slice(0, 500).filter((c) => c.end && c.min != null);
+    for (let i = 0; i < hc.length; i += 100) {
+      const chunk = hc.slice(i, i + 100);
+      const params: unknown[] = []; const tuples: string[] = [];
+      for (const c of chunk) {
+        const row = [new Date((c.end as number) * 1000).toISOString(), c.start ? new Date(c.start * 1000).toISOString() : null,
+          c.min ?? null, c.pause_min ?? null, c.mode ?? null, c.t_out ?? null, c.freq ?? null, c.freq_max ?? null,
+          c.flow_c ?? null, c.kwh ?? null, c.cop ?? null, c.defrost ?? null];
+        tuples.push("(" + row.map((_, j) => `$${params.length + j + 1}` + (j <= 1 ? "::timestamptz" : "")).join(", ") + ")");
+        params.push(...row);
+      }
+      await sql.query(`INSERT INTO heat_cycles (ts, started, minutes, pause_min, mode, t_out, freq, freq_max, flow_c, kwh, cop, defrost)
+        VALUES ${tuples.join(", ")} ON CONFLICT (ts) DO NOTHING`, params);
+      heat += chunk.length;
+    }
     if (h.state && typeof h.state === "object") {
       await sql`INSERT INTO heat_state (id, updated, state) VALUES (1, now(), ${JSON.stringify(h.state)}::jsonb)
         ON CONFLICT (id) DO UPDATE SET updated = now(), state = EXCLUDED.state`;
       heat++;
     }
   }
-  return NextResponse.json({ ok: true, inserted: n, weather, tariff, heat });
+  const fc = body.forecast;
+  let forecast = 0;
+  if (fc && typeof fc === "object" && fc.year) {
+    await sql`INSERT INTO forecast (id, updated, data) VALUES (1, now(), ${JSON.stringify(fc)}::jsonb)
+      ON CONFLICT (id) DO UPDATE SET updated = now(), data = EXCLUDED.data`;
+    forecast = 1;
+  }
+  let rooms = 0;
+  const rm = body.rooms;
+  if (rm && typeof rm === "object" && Object.keys(rm).length) {
+    await sql`INSERT INTO rooms (id, updated, data) VALUES (1, now(), ${JSON.stringify(rm)}::jsonb)
+      ON CONFLICT (id) DO UPDATE SET updated = now(), data = EXCLUDED.data`;
+    // Zeitreihe je Raum, auf den Zeitstempel des Pushes gerundet – dieselbe Achse wie Samples und Wärmepumpe
+    const ts = new Date().toISOString();
+    const entries = Object.entries(rm).slice(0, 60).filter(([, r]) => r && r.temp_c != null);
+    if (entries.length) {
+      const params: unknown[] = []; const tuples: string[] = [];
+      for (const [key, r] of entries) {
+        const row = [ts, key, r.temp_c ?? null, r.setpoint_c ?? null, r.humidity_pct ?? null];
+        tuples.push("(" + row.map((_, j) => `$${params.length + j + 1}` + (j === 0 ? "::timestamptz" : "")).join(", ") + ")");
+        params.push(...row);
+      }
+      await sql.query(`INSERT INTO room_samples (ts, room, temp_c, setpoint_c, humidity_pct) VALUES ${tuples.join(", ")}
+        ON CONFLICT (ts, room) DO UPDATE SET temp_c = EXCLUDED.temp_c, setpoint_c = EXCLUDED.setpoint_c, humidity_pct = EXCLUDED.humidity_pct`, params);
+    }
+    rooms = Object.keys(rm).length;
+  }
+  return NextResponse.json({ ok: true, inserted: n, weather, tariff, heat, forecast, rooms });
 }
