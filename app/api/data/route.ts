@@ -183,6 +183,31 @@ export async function GET(req: NextRequest) {
            percentile_cont(0.5) WITHIN GROUP (ORDER BY minutes) AS med
     FROM heat_cycles WHERE ts > now() - interval '30 days' GROUP BY 1 ORDER BY 1`;
 
+  // Wie viel Energie ein Prozent Ladezustand kostet – gemessen statt angenommen. Über alle Ladephasen
+  // hinweg: hineingeflossene Wattstunden geteilt durch den Hub in Prozentpunkten. Darin stecken auch die
+  // Ladeverluste, und genau das will man für eine Restzeit wissen: nicht wie viel in der Zelle ankommt,
+  // sondern wie viel man oben hineinstecken muss.
+  //
+  // Wichtig ist, die Energie ÜBER DEN GANZEN Ladezeitraum zu zählen, nicht nur in den Messpunkten, in denen
+  // der Ladezustand gerade um ein Prozent springt: er wird nur in ganzen Prozent gemeldet, und zwischen zwei
+  // Sprüngen fließt der Großteil der Energie. Wer nur die Sprungmomente zählt, bekommt einen Bruchteil.
+  // Ab 99 % zählt nichts mehr, dort fließt Energie ohne dass der Ladezustand noch steigt.
+  //
+  // Und die Fensterfunktionen müssen nach Gerät getrennt laufen: in samples steht auch eine Handvoll
+  // Zeilen eines zweiten "Geräts", und ohne PARTITION BY vergleicht lag() den Ladezustand des einen mit
+  // dem des anderen. Das Ergebnis sah plausibel aus und war um den Faktor sieben daneben.
+  const battery = await sql`
+    WITH dev AS (SELECT device FROM samples WHERE packs IS NOT NULL ORDER BY ts DESC LIMIT 1),
+    s AS (
+      SELECT ts, soc, bat_w,
+             lag(soc) OVER (PARTITION BY device ORDER BY ts) AS prev_soc,
+             extract(epoch FROM ts - lag(ts) OVER (PARTITION BY device ORDER BY ts)) AS dt
+      FROM samples WHERE ts > now() - interval '90 days' AND device = (SELECT device FROM dev)
+    )
+    SELECT sum(bat_w * dt / 3600.0)    FILTER (WHERE bat_w > 5 AND dt BETWEEN 10 AND 180 AND soc < 99) AS wh_in,
+           sum(greatest(soc - prev_soc, 0)) FILTER (WHERE bat_w > 5 AND dt BETWEEN 10 AND 180 AND soc < 99) AS pct_up
+    FROM s`;
+
   const forecastRow = await sql`SELECT updated, data FROM forecast WHERE id = 1`;
   const roomsRow = await sql`SELECT updated, data FROM rooms WHERE id = 1`;
   // Langzeit: Tagesbilanz je Raum, dazu drei Zeiträume als fertige Kennzahlen. Gerechnet wird in SQL,
@@ -271,6 +296,12 @@ export async function GET(req: NextRequest) {
         days: cycleDays.map((r) => ({ day: String(r.day), n: Number(r.n), med: num(r.med) })),
       },
     } : null,
+    battery: (() => {
+      const wh = num(battery[0]?.wh_in), pct = num(battery[0]?.pct_up);
+      // Unter 40 Prozentpunkten beobachtetem Hub ist die Zahl noch zu zufällig, um eine Restzeit darauf zu stützen
+      if (wh == null || pct == null || pct < 40 || wh <= 0) return { wh_per_pct: null, pct_observed: pct ?? 0 };
+      return { wh_per_pct: Math.round((wh / pct) * 10) / 10, pct_observed: Math.round(pct), kwh: Math.round(wh / pct * 100) / 1000 };
+    })(),
     forecast: forecastRow[0] ? { ...(forecastRow[0].data as Record<string, unknown>), stored: forecastRow[0].updated } : null,
     rooms: roomsRow[0] ? {
       updated: roomsRow[0].updated,

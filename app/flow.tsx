@@ -4,10 +4,12 @@
 // Knoten mit Symbol, Live-Leistung je Verbindung, animierte Punkte in Flussrichtung, Geschwindigkeit nach Leistung.
 // Alle Leistungen in W: pv, out (NEXA → Haus), bat (+ laden / − entladen), grid (+ Bezug / − Einspeisung), house (Shelly).
 
-export type FlowLabels = { solar: string; battery: string; home: string; grid: string; nexa: string; noGrid: string; self: string; charging: string; discharging: string; idle: string; socLimit: string; acIn: string };
+export type FlowLabels = { solar: string; battery: string; home: string; grid: string; nexa: string; noGrid: string; self: string; charging: string; discharging: string; idle: string; socLimit: string; acIn: string;
+  toLimit: string; toFull: string; untilEmpty: string; etaHint: string };
 export type FlowProps = {
   pv: number | null; out: number | null; bat: number | null; soc: number | null; grid?: number | null; house?: number | null;
   packs?: number | null; socLimit?: number | null; limited?: boolean | null; siteName?: string | null; labels: FlowLabels; fmtW: (w: number | null | undefined) => string;
+  whPerPct?: number | null;   // gemessene Wattstunden je Prozentpunkt; ohne das keine Restzeit
 };
 
 const C = { pv: "#f2cc0c", house: "#ff9830", bat: "#73bf69", grid: "#5794f2", red: "#f2495c", muted: "#8e8e8e", line: "#2c3235", panel: "#1c1f24" };
@@ -15,7 +17,7 @@ const C = { pv: "#f2cc0c", house: "#ff9830", bat: "#73bf69", grid: "#5794f2", re
 // Animationsdauer aus der Leistung: wenige Watt → langsam, ab ~800 W schnell; unter 2 W steht der Fluss.
 const speed = (w: number | null | undefined) => { const a = Math.abs(w ?? 0); return a < 2 ? null : `${Math.max(0.5, Math.min(6, 6 - 5.5 * Math.min(1, a / 800)))}s`; };
 
-export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, limited, siteName, labels, fmtW }: FlowProps) {
+export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, limited, siteName, labels, fmtW, whPerPct }: FlowProps) {
   const hasGrid = grid != null;
   const acIn = (out ?? 0) < -2;   // Register 116 negativ: der NEXA zieht Leistung aus dem Netz (AC-Laden, z. B. Batterie zuerst)
   const homeW = house ?? (out != null && !acIn ? out + Math.max(0, grid ?? 0) : null);
@@ -24,6 +26,25 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
   const socPct = soc == null ? 0 : Math.max(0, Math.min(100, soc));
   const socColor = socPct <= (socLimit ?? 8) + 2 ? C.red : socPct < 30 ? C.house : C.bat;
   const batState = bat == null ? "" : bat > 2 ? labels.charging : bat < -2 ? labels.discharging : labels.idle;
+
+  // Restzeit bis zu einem Ladezustand. Nur mit gemessenem Energiebedarf je Prozent und nur, solange sich
+  // etwas bewegt – eine Schätzung aus einer Annahme wäre hier schlimmer als gar keine.
+  const fmtEta = (mins: number) => mins < 1 ? "< 1 min"
+    : mins < 90 ? `${Math.round(mins)} min`
+    : `${Math.floor(mins / 60)} h ${String(Math.round(mins % 60)).padStart(2, "0")} min`;
+  const eta = (targetPct: number) => {
+    if (whPerPct == null || soc == null || bat == null || Math.abs(bat) < 5) return null;
+    const delta = targetPct - socPct;
+    if (delta === 0) return null;
+    if (delta > 0 && bat <= 0) return null;        // Ziel liegt oben, aber es wird entladen
+    if (delta < 0 && bat >= 0) return null;        // Ziel liegt unten, aber es wird geladen
+    const mins = Math.abs(delta) * whPerPct / Math.abs(bat) * 60;
+    return mins > 60 * 48 ? null : fmtEta(mins);   // über zwei Tage sagt die Zahl nichts mehr
+  };
+  const limitPct = socLimit ?? null;
+  const etaLimit = limitPct != null && socPct < limitPct ? eta(limitPct) : null;
+  const etaFull = eta(100);
+  const etaEmpty = limitPct != null && socPct > limitPct ? eta(limitPct) : null;
 
   // Kante: ruhige Grundlinie, darauf kleine Pfeile, die in Flussrichtung entlanglaufen (drei versetzt, Tempo nach Leistung)
   const Edge = ({ d, w, color, rev }: { d: string; w: number | null | undefined; color: string; rev?: boolean }) => {
@@ -50,7 +71,7 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
   );
 
   return (
-    <svg className="flow" viewBox="0 0 440 320" role="img" aria-label="power flow">
+    <svg className="flow" viewBox={`0 0 440 ${etaLimit || etaFull || etaEmpty ? (etaLimit && etaFull ? 352 : 336) : 320}`} role="img" aria-label="power flow">
       {/* Kanten unter den Knoten: Solar → NEXA, NEXA → Haus, Netz ↔ Haus */}
       <Edge d="M85 92 L85 200" w={pv} color={C.pv} />
       <Edge d="M160 222 C 176 222, 182 200, 193 192" w={out} color={acIn ? C.grid : C.house} rev={acIn} />
@@ -77,6 +98,10 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
           {bat == null ? "" : `${bat > 2 ? "▲ " : bat < -2 ? "▼ " : ""}${fmtW(Math.abs(bat))} ${batState}`}
         </text>
         <text className="ns" y="38" textAnchor="middle" fill={acIn ? C.grid : C.house}>{acIn ? `← ${labels.acIn}: ${fmtW(-(out ?? 0))}` : `→ ${labels.home}: ${fmtW(out)}`}</text>
+        {/* Restzeiten: nur wenn sie etwas aussagen – gemessener Bedarf je Prozent und eine Richtung, in die es geht */}
+        {etaLimit && <text className="ns" y="54" textAnchor="middle" fill={C.red}>{labels.toLimit} {etaLimit}</text>}
+        {etaFull && <text className="ns" y={etaLimit ? 70 : 54} textAnchor="middle" fill={C.bat}>{labels.toFull} {etaFull}</text>}
+        {etaEmpty && <text className="ns" y="54" textAnchor="middle" fill={C.house}>{labels.untilEmpty} {etaEmpty}</text>}
       </g>
 
       {/* Haus (Mitte) mit Standortname */}
