@@ -51,7 +51,7 @@ const T = {
         payback: "Payback", paybackText: "{pct} % of {cost} recovered · about {y} years to go at the current pace", paybackDone: "{cost} recovered, the system has paid for itself",
         dailyCost: "Savings and grid cost per day", costsHint: "Savings = energy delivered to the house × price (grid power you did not have to buy). Grid cost = grid import measured by the Shelly × price, only while the zero feed-in control runs.",
         houseToday: "Household consumption", houseSplit: "{g} grid + {n} NEXA", selfToday: "Self-sufficiency", selfHint: "of the household load came from the NEXA", houseNote: "household from the Shelly meter, only for the hours it was read", acIn: "Charging from grid", acInEnergy: "Charged from grid", acInCost: "grid charging", fromGrid: "From the grid (AC charging)", topPanels: "Top panels", topHint: "Energy per PV input (voltage × current), ranked. Share = part of the total of all inputs in that window.", noYield: "no yield", flow: "Power flow", flowSolar: "Solar", flowBattery: "Battery", flowHome: "Home", flowGrid: "Grid", flowNexa: "NEXA", flowNoGrid: "grid only with a Shelly meter", flowSelf: "self-sufficiency", flowSocLimit: "discharge limit",
-        etaToLimit: "to the limit in", etaToFull: "to 100 % in", etaUntilEmpty: "down to the limit in",
+        etaTo: "to",
         etaHint: "Remaining times come from the energy per percent measured over all charging phases so far — charging losses included — divided by the power flowing right now. They shift with the sun.",
         weather: "Weather", wtemp: "Temperature", wcond: "Conditions", wcloud: "Cloud cover", wrad: "Global radiation", wsun: "Sunrise – sunset", wsunshine: "Sunshine today", wradsum: "Radiation today",
         wnone: "no weather data yet", wchart: "Global radiation vs. PV power", wforecast: "Forecast 48 h", wradiation: "Radiation", apierr: "Data API is not responding",
@@ -69,7 +69,7 @@ const T = {
         payback: "Amortisation", paybackText: "{pct} % von {cost} zurückverdient · bei diesem Tempo noch etwa {y} Jahre", paybackDone: "{cost} zurückverdient, die Anlage hat sich bezahlt gemacht",
         dailyCost: "Ersparnis und Netzkosten pro Tag", costsHint: "Ersparnis = ins Haus abgegebene Energie × Preis (Netzstrom, den du nicht kaufen musstest). Netzkosten = Netzbezug laut Shelly × Preis, nur solange die Nulleinspeisung läuft.",
         houseToday: "Hausverbrauch", houseSplit: "{g} Netz + {n} NEXA", selfToday: "Eigenversorgung", selfHint: "des Hausverbrauchs kamen vom NEXA", houseNote: "Hausverbrauch laut Shelly-Zähler, nur für die Stunden, in denen er gelesen wurde", acIn: "Laden aus dem Netz", acInEnergy: "Aus dem Netz geladen", acInCost: "Netzladen", fromGrid: "Aus dem Netz (AC-Laden)", topPanels: "Top-Panels", topHint: "Energie je PV-Eingang (Spannung × Strom), als Rangliste. Anteil = Anteil an der Summe aller Eingänge im jeweiligen Zeitraum.", noYield: "kein Ertrag", flow: "Energiefluss", flowSolar: "Solar", flowBattery: "Batterie", flowHome: "Haus", flowGrid: "Netz", flowNexa: "NEXA", flowNoGrid: "Netz nur mit Shelly-Zähler", flowSelf: "Eigenversorgung", flowSocLimit: "Entladegrenze",
-        etaToLimit: "bis zur Grenze noch", etaToFull: "bis 100 % noch", etaUntilEmpty: "bis zur Grenze noch",
+        etaTo: "bis",
         etaHint: "Die Restzeiten kommen aus dem Energiebedarf je Prozent, gemessen über alle bisherigen Ladephasen — Ladeverluste eingerechnet — geteilt durch die Leistung, die gerade fließt. Sie verschieben sich mit der Sonne.",
         weather: "Wetter", wtemp: "Temperatur", wcond: "Wetterlage", wcloud: "Bewölkung", wrad: "Globalstrahlung", wsun: "Sonnenaufgang – Sonnenuntergang", wsunshine: "Sonnenschein heute", wradsum: "Strahlung heute",
         wnone: "noch keine Wetterdaten", wchart: "Globalstrahlung und PV-Leistung", wforecast: "Vorhersage 48 h", wradiation: "Strahlung", apierr: "Daten-API antwortet nicht",
@@ -134,7 +134,7 @@ export default function Page() {
             <PowerFlow pv={l?.pv_w ?? null} out={l?.out_w ?? null} bat={l?.bat_w ?? null} soc={l?.soc ?? null} packs={l?.packs ?? null}
                        grid={live ? sh!.grid_w : null} house={live ? sh!.household_w : null} socLimit={sh?.soc_limit ?? null} limited={sh?.limited ?? null} siteName={data?.site?.name ?? null} fmtW={fmtW}
                        labels={{ solar: t.flowSolar, battery: t.flowBattery, home: t.flowHome, grid: t.flowGrid, nexa: t.flowNexa, noGrid: t.flowNoGrid, self: t.flowSelf, charging: t.charging, discharging: t.discharging, idle: t.idle, socLimit: t.flowSocLimit, acIn: t.acIn,
-                                 toLimit: t.etaToLimit, toFull: t.etaToFull, untilEmpty: t.etaUntilEmpty, etaHint: t.etaHint }}
+                                 etaTo: t.etaTo, etaHint: t.etaHint }}
                        whPerPct={data?.battery?.wh_per_pct ?? null} />
             <div>
             <div className="tiles">

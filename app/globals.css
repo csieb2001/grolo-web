@@ -56,6 +56,8 @@ table.heat tr.sel th { color: var(--pv); } table.heat tr.sel td { outline: 1px s
 .flow .nl { fill: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 .flow .nv { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; paint-order: stroke; stroke: var(--panel); stroke-width: 4px; stroke-linejoin: round; }
 .flow .ns { fill: var(--muted); font-size: 10.5px; }
+/* Restzeiten etwas größer als die übrigen Unterzeilen: sie sind der Grund, warum man hinsieht. */
+.flow .ne { font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* Kosten und Ersparnis */
 .payback { margin: 4px 0 14px; } .payback .bar { height: 10px; border-radius: 5px; background: #26292d; overflow: hidden; margin-top: 6px; } .payback .bar div { height: 100%; background: var(--bat); border-radius: 5px; }

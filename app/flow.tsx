@@ -5,7 +5,7 @@
 // Alle Leistungen in W: pv, out (NEXA → Haus), bat (+ laden / − entladen), grid (+ Bezug / − Einspeisung), house (Shelly).
 
 export type FlowLabels = { solar: string; battery: string; home: string; grid: string; nexa: string; noGrid: string; self: string; charging: string; discharging: string; idle: string; socLimit: string; acIn: string;
-  toLimit: string; toFull: string; untilEmpty: string; etaHint: string };
+  etaTo: string; etaHint: string };
 export type FlowProps = {
   pv: number | null; out: number | null; bat: number | null; soc: number | null; grid?: number | null; house?: number | null;
   packs?: number | null; socLimit?: number | null; limited?: boolean | null; siteName?: string | null; labels: FlowLabels; fmtW: (w: number | null | undefined) => string;
@@ -45,6 +45,7 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
   const etaLimit = limitPct != null && socPct < limitPct ? eta(limitPct) : null;
   const etaFull = eta(100);
   const etaEmpty = limitPct != null && socPct > limitPct ? eta(limitPct) : null;
+  const etaLines = (etaLimit ? 1 : 0) + (etaFull ? 1 : 0) + (etaEmpty ? 1 : 0);
 
   // Kante: ruhige Grundlinie, darauf kleine Pfeile, die in Flussrichtung entlanglaufen (drei versetzt, Tempo nach Leistung)
   const Edge = ({ d, w, color, rev }: { d: string; w: number | null | undefined; color: string; rev?: boolean }) => {
@@ -71,7 +72,7 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
   );
 
   return (
-    <svg className="flow" viewBox={`0 0 440 ${etaLimit || etaFull || etaEmpty ? (etaLimit && etaFull ? 352 : 336) : 320}`} role="img" aria-label="power flow">
+    <svg className="flow" viewBox={`0 0 440 ${320 + etaLines * 17}`} role="img" aria-label="power flow">
       {/* Kanten unter den Knoten: Solar → NEXA, NEXA → Haus, Netz ↔ Haus */}
       <Edge d="M85 92 L85 200" w={pv} color={C.pv} />
       <Edge d="M160 222 C 176 222, 182 200, 193 192" w={out} color={acIn ? C.grid : C.house} rev={acIn} />
@@ -87,7 +88,8 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
 
       {/* NEXA mit Batterie (unten links) */}
       <g transform="translate(85 250)">
-        <rect x="-75" y="-50" width="150" height="100" rx="12" fill={C.panel} stroke={limited ? C.house : C.bat} strokeWidth="2.5" />
+        {/* Der Kasten wächst um die Restzeiten mit – sie gehören zum NEXA und sollen nicht auf seinem Rand liegen */}
+        <rect x="-75" y="-50" width="150" height={100 + etaLines * 17} rx="12" fill={C.panel} stroke={limited ? C.house : C.bat} strokeWidth="2.5" />
         <text className="nl" y="-34" textAnchor="middle">{labels.nexa}{packs ? ` · ${packs} × ${labels.battery}` : ""}</text>
         <rect x="-62" y="-22" width="60" height="28" rx="4" fill="none" stroke={C.muted} strokeWidth="2" />
         <rect x="-1" y="-13" width="5" height="10" rx="1" fill={C.muted} />
@@ -99,9 +101,9 @@ export function PowerFlow({ pv, out, bat, soc, grid, house, packs, socLimit, lim
         </text>
         <text className="ns" y="38" textAnchor="middle" fill={acIn ? C.grid : C.house}>{acIn ? `← ${labels.acIn}: ${fmtW(-(out ?? 0))}` : `→ ${labels.home}: ${fmtW(out)}`}</text>
         {/* Restzeiten: nur wenn sie etwas aussagen – gemessener Bedarf je Prozent und eine Richtung, in die es geht */}
-        {etaLimit && <text className="ns" y="54" textAnchor="middle" fill={C.red}>{labels.toLimit} {etaLimit}</text>}
-        {etaFull && <text className="ns" y={etaLimit ? 70 : 54} textAnchor="middle" fill={C.bat}>{labels.toFull} {etaFull}</text>}
-        {etaEmpty && <text className="ns" y="54" textAnchor="middle" fill={C.house}>{labels.untilEmpty} {etaEmpty}</text>}
+        {etaLimit && <text className="ne" y="56" textAnchor="middle" fill={C.red}>{labels.etaTo} {Math.round(limitPct!)} %: {etaLimit}</text>}
+        {etaFull && <text className="ne" y={etaLimit ? 73 : 56} textAnchor="middle" fill={C.bat}>{labels.etaTo} 100 %: {etaFull}</text>}
+        {etaEmpty && <text className="ne" y="56" textAnchor="middle" fill={C.house}>{labels.etaTo} {Math.round(limitPct!)} %: {etaEmpty}</text>}
       </g>
 
       {/* Haus (Mitte) mit Standortname */}
