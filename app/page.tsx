@@ -10,6 +10,8 @@ import { ForecastSection, type ForecastData } from "./forecast";
 import { RoomsSection, type RoomsData } from "./rooms";
 
 type Data = Partial<SunData> & {
+  locked?: boolean;
+  links?: { settings: string | null; grafana: string | null; heatpump: string | null };
   updated: string | null; device: string | null;
   latest: { pv_w: number; out_w: number; bat_w: number; soc: number; soc1?: number; soc2?: number; soc3?: number; soc4?: number; temp_sys?: number; temp_bat1?: number; temp_bat2?: number; pv_v?: number[]; pv_a?: number[]; packs?: number; status?: string; mode?: string } | null;
   info: { model?: string; dongle_model?: string; dongle_sw?: string; dongle_hw?: string; wifi_dbm?: string; updated?: string } | null;
@@ -55,6 +57,7 @@ const T = {
         etaHint: "Remaining times come from the energy per percent measured over all charging phases so far — charging losses included — divided by the power flowing right now. They shift with the sun.",
         weather: "Weather", wtemp: "Temperature", wcond: "Conditions", wcloud: "Cloud cover", wrad: "Global radiation", wsun: "Sunrise – sunset", wsunshine: "Sunshine today", wradsum: "Radiation today",
         wnone: "no weather data yet", wchart: "Global radiation vs. PV power", wforecast: "Forecast 48 h", wradiation: "Radiation", apierr: "Data API is not responding",
+        navSettings: "Settings", navGrafana: "Grafana", navHeat: "Heat pump",
         footer: "Read-only mirror of a local GroLo installation. Data every 30 s, no control from here.", range: { "24h": "24 h", "7d": "7 days", "30d": "30 days" } as Record<string, string> },
   de: { title: "Growatt Local", live: "live", stale: "veraltet", nodata: "noch keine Daten", updated: "aktualisiert", now: "Jetzt", pv: "PV-Leistung", out: "Ausgang ins Haus", bat: "Batterie", soc: "Ladezustand",
         charging: "lädt", discharging: "entlädt", idle: "Ruhe", mode: "Modus", tsys: "Systemtemp.", packs: "Batteriepacks", pvin: "PV-Eingänge belegt",
@@ -73,6 +76,7 @@ const T = {
         etaHint: "Die Restzeiten kommen aus dem Energiebedarf je Prozent, gemessen über alle bisherigen Ladephasen — Ladeverluste eingerechnet — geteilt durch die Leistung, die gerade fließt. Sie verschieben sich mit der Sonne.",
         weather: "Wetter", wtemp: "Temperatur", wcond: "Wetterlage", wcloud: "Bewölkung", wrad: "Globalstrahlung", wsun: "Sonnenaufgang – Sonnenuntergang", wsunshine: "Sonnenschein heute", wradsum: "Strahlung heute",
         wnone: "noch keine Wetterdaten", wchart: "Globalstrahlung und PV-Leistung", wforecast: "Vorhersage 48 h", wradiation: "Strahlung", apierr: "Daten-API antwortet nicht",
+        navSettings: "Einstellungen", navGrafana: "Grafana", navHeat: "Wärmepumpe",
         footer: "Nur-Lese-Spiegel einer lokalen GroLo-Installation. Daten alle 30 s, keine Steuerung von hier.", range: { "24h": "24 h", "7d": "7 Tage", "30d": "30 Tage" } as Record<string, string> },
 };
 
@@ -86,6 +90,8 @@ export default function Page() {
   const [year, setYear] = useState<number | null>(null);
   const [data, setData] = useState<Data | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [origin, setOrigin] = useState<{ hostname: string; protocol: string } | null>(null);
+  useEffect(() => setOrigin({ hostname: window.location.hostname, protocol: window.location.protocol }), []);
   const t = T[lang];
   useEffect(() => { try { const l = localStorage.getItem("grolo.lang"); if (l === "de" || l === "en") setLang(l); } catch {} }, []);
   useEffect(() => {
@@ -117,6 +123,30 @@ export default function Page() {
   }, [data, series, locale, range]);
   const forecast = (data?.weather?.forecast || []).map(f => ({ ...f, label: new Date(f.t).toLocaleString(locale, { weekday: "short", hour: "2-digit" }) }));
 
+  // Nachbarseiten derselben Installation (Einstellungsseite, Grafana, Wärmepumpe). Vorrang haben die
+  // Adressen aus der Umgebung; sonst werden sie aus dem eigenen Hostnamen abgeleitet, indem die erste
+  // Stelle ersetzt wird (pv.example.org -> settings.example.org). Ohne Subdomain – etwa beim lokalen
+  // Entwickeln auf localhost – gibt es keine Nachbarn und die Leiste bleibt leer.
+  const nav = useMemo(() => {
+    // origin wird erst nach dem Mounten gesetzt, sonst unterscheidet sich das erste Rendern im Browser
+    // von dem auf dem Server und React beschwert sich über die Abweichung.
+    if (!origin) return [] as { href: string; label: string; blank: boolean }[];
+    const env = data?.links;
+    const host = origin.hostname;
+    const base = origin.protocol === "https:" && host.split(".").length > 2
+      ? `https://${host.replace(/^[^.]+\./, "")}` : null;
+    const settings = env?.settings || (base ? base.replace("https://", "https://settings.") : null);
+    const grafana = env?.grafana || (base ? `${base.replace("https://", "https://grafana.")}/d/${lang === "de" ? "nexa2000-de" : "nexa2000"}` : null);
+    const heat = env?.heatpump || (settings ? `${settings.replace(/\/$/, "")}/wolf.html` : null);
+    // Gleiche Reihenfolge wie auf der Einstellungs- und der Wärmepumpenseite; Grafana in einem neuen Tab,
+    // weil es eine eigene Anwendung ist und nicht Teil dieser Seite.
+    return [
+      settings && { href: settings, label: t.navSettings, blank: false },
+      heat && { href: heat, label: t.navHeat, blank: false },
+      grafana && { href: grafana, label: t.navGrafana, blank: true },
+    ].filter(Boolean) as { href: string; label: string; blank: boolean }[];
+  }, [origin, data?.links, lang, t]);
+
   return (
     <>
       <header>
@@ -124,6 +154,7 @@ export default function Page() {
         <span className={"pill " + (ageSec < 120 ? "ok" : ageSec < 3600 ? "warn" : "bad")}>{!data?.updated ? t.nodata : `${ageSec < 120 ? t.live : t.stale} · ${t.updated} ${new Date(data.updated).toLocaleTimeString(locale)}`}</span>
         {data?.device && <span className="pill">{data.device}</span>}
         <span className="spacer" />
+        <nav className="nav">{nav.map(n => <a key={n.href} href={n.href} {...(n.blank ? { target: "_blank", rel: "noreferrer" } : {})}>{n.label}</a>)}</nav>
         <div className="toggle">{(["en", "de"] as const).map(x => <button key={x} className={lang === x ? "on" : ""} onClick={() => { setLang(x); try { localStorage.setItem("grolo.lang", x); } catch {} }}>{x.toUpperCase()}</button>)}</div>
       </header>
       <main>
@@ -282,7 +313,7 @@ export default function Page() {
           </div>
         </section>
       </main>
-      <footer>{t.footer} · <a href="https://github.com/csieb2001/grolo" target="_blank" rel="noreferrer">GroLo on GitHub</a> · <a href="/api/logout">{lang === "de" ? "Abmelden" : "Sign out"}</a></footer>
+      <footer>{t.footer} · <a href="https://github.com/csieb2001/grolo" target="_blank" rel="noreferrer">GroLo on GitHub</a>{data?.locked ? <> · <a href="/api/logout">{lang === "de" ? "Abmelden" : "Sign out"}</a></> : null}</footer>
     </>
   );
 }

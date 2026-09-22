@@ -13,6 +13,9 @@ export async function expectedToken(): Promise<string | null> {
 }
 
 export async function isAuthorized(req: NextRequest | { cookies: { get(name: string): { value: string } | undefined } }): Promise<boolean> {
+  // Ohne SITE_PASSWORD gibt es keinen Login: der Zugang wird dann davor geregelt (Cloudflare Access vor dem
+  // Tunnel in den LXC). Der Container veröffentlicht keinen Host-Port, erreichbar ist er nur über den Tunnel.
+  if (!process.env.SITE_PASSWORD) return true;
   const want = await expectedToken();
   if (!want) return false;
   const got = req.cookies.get(COOKIE)?.value;

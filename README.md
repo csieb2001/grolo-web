@@ -1,8 +1,8 @@
 # GroLo web
 
-Password-protected live mirror of a Growatt NEXA 2000 balcony battery and a Wolf CHA heat pump, hosted on Vercel. The local
-[GroLo stack](https://github.com/csieb2001/grolo) pushes cleaned measurements and weather data every 30 s; this app
-stores them in Neon Postgres and renders a live power-flow schema (solar → NEXA/battery → home, grid ↔ home with a Shelly
+Live mirror of a Growatt NEXA 2000 balcony battery and a Wolf CHA heat pump, self-hosted next to the
+[GroLo stack](https://github.com/csieb2001/grolo) it belongs to. The stack pushes cleaned measurements and weather data
+every 30 s; this app stores them in Postgres and renders a live power-flow schema (solar → NEXA/battery → home, grid ↔ home with a Shelly
 meter, animated like the energy-flow screens of the Anker SOLIX or Growatt apps), tiles, charts, daily energy figures and a
 **Costs and savings** section (saved today/month/year/total, grid cost, payback), a **Year calendar** (one tile per day coloured
 by PV yield, click opens the day; highlights: strongest/weakest day, highest peak, best self-sufficiency, best month, year so far)
@@ -11,22 +11,26 @@ day with the performance factor, where the heat pump's electricity came from —
 the grid — plus heat cost, cost per kWh of heat and CO₂ against a gas boiler), in English and German.
 
 ```
-GroLo stack (LXC) ── web-push sidecar ──POST /api/ingest (Bearer token)──▶ Vercel ──▶ Neon Postgres
-                                                                              │
-                          browser ──cookie login──▶ /  (Next.js page) ◀── GET /api/data ◀┘
+web-push sidecar ──POST /api/ingest (Bearer token)──▶ grolo-web ──▶ grolo-db (Postgres)
+   (same Docker network, the push never leaves the house)     ▲
+                                                              │
+  browser ──▶ Cloudflare Access ──▶ Cloudflare Tunnel ──▶ page and GET /api/data
 ```
 
-Production: https://grolo-web.vercel.app (alias `grolo-local.vercel.app` also points here).
+Both containers are part of the stack's `docker-compose.yml` under the profile `web`, neither publishes a port to the
+network: the only way in from outside is the Cloudflare Tunnel, and an Access policy sits in front of it. Because the
+push service talks to the container directly, `/api/ingest` does not need to be reachable from the internet at all.
 
-## Environment variables (Vercel → Project → Settings → Environment Variables)
+## Environment variables
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | Neon Postgres connection string (set automatically by the Neon marketplace integration) |
+| `DATABASE_URL` | Postgres connection string, e.g. `postgres://grolo:<password>@grolo-db:5432/grolo` |
 | `INGEST_TOKEN` | Bearer token the push service sends to `/api/ingest` (`openssl rand -hex 24`) |
-| `SITE_PASSWORD` | Password for the page; the cookie stores an HMAC of it, never the password |
+| `LINK_SETTINGS`, `LINK_GRAFANA`, `LINK_HEATPUMP` | Optional addresses of the stack's other pages, shown in the header. Left empty they are derived from the page's own host name (`pv.example.org` → `settings.example.org`, `grafana.example.org`), which is why nothing needs configuring when the services follow that pattern. Without a subdomain — on `localhost`, say — the links are left out rather than guessed. |
+| `SITE_PASSWORD` | Optional password for the page. **Set** = login with a cookie holding an HMAC of it, never the password. **Empty** = no login at all, for when access is already handled in front of the app (Cloudflare Access). Leave it empty only if nothing else can reach the container. |
 
-The push service in the stack needs `WEB_URL=https://grolo-web.vercel.app` and `WEB_TOKEN=<INGEST_TOKEN>` in its `.env`.
+The push service in the stack needs `WEB_URL=http://grolo-web:3000` and `WEB_TOKEN=<INGEST_TOKEN>` in its `.env`.
 
 ## API
 
@@ -75,7 +79,7 @@ zero feed-in control runs); `shelly` is the controller state, `tariff` the elect
 `(device, ts)`, `weather.current` is kept as a single row plus a history row per timestamp, `weather.forecast` is upserted per
 hour so newer forecasts overwrite older ones. Tables are created on first use.
 
-`GET /api/data?range=24h|7d|30d&day=YYYY-MM-DD&year=YYYY` (cookie required) returns `latest`, `series` (bucketed), `daily` (kWh per day
+`GET /api/data?range=24h|7d|30d&day=YYYY-MM-DD&year=YYYY` returns `latest`, `series` (bucketed), `daily` (kWh per day
 from minute averages, including `grid_kwh`/`feedin_kwh`/`house_kwh` from the Shelly), `today`, `totals`, `periods` (output to
 house, grid import and export since the start of the month and year and in total, with `days` and `since` for the payback
 estimate), `tariff` (price, feed-in rate, system price; the page assumes 30 ct/kWh when missing), `shelly` (controller state
@@ -91,19 +95,31 @@ with its time and the mean power during daylight over all minutes with data; day
 approximation in SQL using `site.lat/lon`, central Germany if no location is set). The sun path on the page is computed in the browser
 (`lib/solar.ts`, NOAA algorithm) from `site.lat/lon`.
 
-Auth: `POST /api/login` (form field `password`) sets the `grolo_auth` cookie for 30 days, `/api/logout` clears it. Everything
-except `/login`, `/api/login`, `/api/ingest` and static assets requires the cookie (`proxy.ts`).
+Auth: with `SITE_PASSWORD` set, `POST /api/login` (form field `password`) sets the `grolo_auth` cookie for 30 days and
+`/api/logout` clears it; everything except `/login`, `/api/login`, `/api/ingest` and static assets then requires the cookie
+(`proxy.ts`). With `SITE_PASSWORD` empty there is no login and no cookie — see the table above for when that is safe.
 
-## Develop and deploy
+## Develop
 
 ```bash
 npm install
-vercel env pull .env.local --environment production   # DATABASE_URL, INGEST_TOKEN, SITE_PASSWORD
+docker run -d --name grolo-dev-db -e POSTGRES_PASSWORD=grolo -e POSTGRES_USER=grolo -e POSTGRES_DB=grolo -p 5432:5432 postgres:18-alpine
+echo 'DATABASE_URL=postgres://grolo:grolo@127.0.0.1:5432/grolo' > .env.local   # plus INGEST_TOKEN, optional SITE_PASSWORD
 npm run dev
-vercel --prod --yes && vercel alias set <deployment-url> grolo-web.vercel.app
 ```
 
-Deployment Protection (Vercel Authentication) is set to preview deployments only, so production is reachable with the
-site password alone.
+The tables are created on first use, so an empty database is enough to start; feed it through `/api/ingest`.
+
+## Deploy
+
+Clone this repository next to the stack (the compose file expects `../grolo-web`) and let the stack build it:
+
+```bash
+docker compose build grolo-web
+docker compose up -d grolo-web
+```
+
+`next.config.ts` uses `output: "standalone"`, so the image carries only the server bundle. Publishing it to the internet
+is the tunnel's job and is described in the [stack's README](https://github.com/csieb2001/grolo).
 
 License: MIT.

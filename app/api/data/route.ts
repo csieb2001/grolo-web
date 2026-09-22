@@ -255,6 +255,15 @@ export async function GET(req: NextRequest) {
   const a = allAvg[0];
   const allOf = (i: number) => { const h = allHigh.find((r) => Number(r.string) === i); return { avg_w: a ? num(i === 0 ? a.pv : a[`s${i}`]) : null, high_w: h ? num(h.p) : null, high_t: h ? h.ts : null }; };
   return NextResponse.json({
+    // Ohne SITE_PASSWORD gibt es keinen Login (der Container hinter Cloudflare Access) – dann blendet die Seite das Abmelden aus.
+    locked: !!process.env.SITE_PASSWORD,
+    // Nachbarseiten derselben Installation. Gesetzt = diese Adressen, nicht gesetzt = die Seite leitet sie
+    // aus ihrem eigenen Hostnamen ab (pv.<domain> -> settings.<domain>, grafana.<domain>).
+    links: {
+      settings: process.env.LINK_SETTINGS || null,
+      grafana: process.env.LINK_GRAFANA || null,
+      heatpump: process.env.LINK_HEATPUMP || null,
+    },
     updated: l?.ts ?? null,
     device: l ? anonymize(l.device) : null,
     latest: l ? { pv_w: num(l.pv_w), out_w: num(l.out_w), bat_w: num(l.bat_w), soc: num(l.soc), soc1: num(l.soc1), soc2: num(l.soc2), soc3: num(l.soc3), soc4: num(l.soc4),

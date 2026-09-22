@@ -1,6 +1,27 @@
-import { neon } from "@neondatabase/serverless";
+import { Pool } from "pg";
 
-export const sql = neon(process.env.DATABASE_URL!);
+// Lokales Postgres im selben Docker-Netz. Vorher lief hier der HTTP-Treiber von Neon; die Aufrufstellen
+// (getaggte Vorlagen und sql.query) sehen davon nichts, weil dieser Wrapper beide Formen anbietet und
+// wie Neon direkt die Zeilen liefert. Sitzungszeitzone fest auf UTC, damit date_trunc auf timestamptz
+// genau wie vorher rechnet – die Abfragen setzen ihre Zeitzone überall selbst per AT TIME ZONE.
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: Number(process.env.PGPOOL_MAX || 8),
+  options: "-c timezone=UTC",
+});
+
+// Zeilen bleiben wie beim Neon-Treiber lose typisiert; die Aufrufstellen prüfen die Felder selbst.
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type Row = Record<string, any>;
+type Sql = ((strings: TemplateStringsArray, ...values: unknown[]) => Promise<Row[]>) & {
+  query(text: string, params?: unknown[]): Promise<Row[]>;
+};
+
+export const sql = Object.assign(
+  (strings: TemplateStringsArray, ...values: unknown[]) =>
+    pool.query(strings.reduce((acc, part, i) => acc + "$" + i + part), values).then((r) => r.rows),
+  { query: (text: string, params: unknown[] = []) => pool.query(text, params).then((r) => r.rows) },
+) as Sql;
 
 let ready: Promise<void> | null = null;
 export function ensureSchema() {
