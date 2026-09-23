@@ -4,6 +4,7 @@
 
 export type ExplainInput = {
   pv: number | null; out: number | null; bat: number | null; soc: number | null; mode: string | null; live: boolean;
+  modeRaw?: string | null;   // unübersetzt, für Fallunterscheidungen
   sh: { enabled?: boolean | null; ok?: boolean | null; reason?: string | null; limited?: boolean | null; grid_w?: number | null; household_w?: number | null;
         target_w?: number | null; setpoint_w?: number | null; soc?: number | null; soc_limit?: number | null; max_w?: number | null } | null;
 };
@@ -11,6 +12,7 @@ export type ExplainInput = {
 const X = {
   en: {
     off: "Smart control is off. The NEXA runs in “{mode}” with the slot power set by hand and delivers {out}.",
+    offDev: "The local controller is off: the NEXA regulates by itself against its paired meter and delivers {out}. The slot power is only the upper limit.",
     offAc: "Smart control is off. The NEXA runs in “{mode}” and charges the battery ({soc} %) with {acin} from the grid plus {pv} solar; the house gets nothing from it right now.",
     acTail: " In addition it draws {acin} from the grid into the battery.",
     offGrid: " The house ({house}) draws {grid} from the grid.",
@@ -30,6 +32,7 @@ const X = {
   },
   de: {
     off: "Smart-Regelung ist aus. Der NEXA läuft im Modus „{mode}“ mit der von Hand gesetzten Slot-Leistung und gibt {out} ab.",
+    offDev: "Der lokale Regler ist aus: der NEXA regelt selbst nach seinem gekoppelten Zähler und gibt {out} ab. Die Slot-Leistung ist dabei nur die Obergrenze.",
     offAc: "Smart-Regelung ist aus. Der NEXA läuft im Modus „{mode}“ und lädt die Batterie ({soc} %) mit {acin} aus dem Netz plus {pv} Solar; das Haus bekommt gerade nichts von ihm.",
     acTail: " Zusätzlich zieht er {acin} aus dem Netz in die Batterie.",
     offGrid: " Das Haus ({house}) holt {grid} aus dem Netz.",
@@ -60,7 +63,15 @@ export function explainSmart(lang: "en" | "de", d: ExplainInput, fmtW: (w: numbe
   const m = { mode: d.mode, out: fmtW(Math.max(0, out)), acin: fmtW(-out), target: fmtW(target), house: fmtW(house), grid: fmtW(grid == null ? null : Math.abs(grid)), soc: pct(soc), lim: pct(lim),
               bat: fmtW(Math.abs(bat)), pv: fmtW(d.pv), setpoint: fmtW(setpoint), max: fmtW(max) };
   const tail = acIn ? fill(x.acTail, m) : bat > 2 ? fill(x.charging, m) : bat < -2 ? fill(x.discharging, m) : (out > 2 ? fill(x.solarOnly, m) : "");
-  if (!sh || !sh.enabled) return fill(acIn ? x.offAc : x.off, m) + (d.live && grid != null && grid > 0 ? fill(x.offGrid, m) : "");
+  // "Grid First" ist die Beschriftung, die dieser Stack bis 09/2026 für denselben Geräte-Wert 2 geschrieben hat.
+  const raw = d.modeRaw ?? d.mode;
+  const devSmart = raw === "Smart" || raw === "Grid First";
+  if (!sh || !sh.enabled) {
+    // Seit der NEXA seinen eigenen Smart-Modus kann (gekoppelter Zähler), ist "aus" nicht mehr gleich "von Hand":
+    // dann regelt das Gerät selbst und die Slot-Leistung ist nur die Obergrenze.
+    const base = acIn ? x.offAc : (devSmart ? x.offDev : x.off);
+    return fill(base, m) + (devSmart && !acIn ? tail : "") + (d.live && grid != null && grid > 0 ? fill(x.offGrid, m) : "");
+  }
   if (sh.ok === false || sh.reason === "shelly_unreachable") return fill(x.unreachable, m);
   if (sh.reason === "device_offline") return fill(x.offline, m);
   if (sh.reason === "wrong_mode") return fill(x.wrongMode, m);

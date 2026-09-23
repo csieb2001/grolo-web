@@ -46,7 +46,7 @@ const T = {
         total: "Total since", daily: "Energy per day (kWh)", pieA: "Where did today's PV energy go?", pieB: "Where did today's house energy come from?",
         direct: "Directly to house", intoBat: "Into the battery", fromPv: "Directly from PV", fromBat: "From the battery",
         hardware: "Hardware", pack: "Pack", temp: "Temperature", dongle: "Wi-Fi dongle", wifi: "Wi-Fi signal", string: "String", free: "free",
-        modes: { "Load First": "Load first", "Battery First": "Battery first", "Smart Mode": "Smart" } as Record<string, string>,
+        modes: { "Load First": "Load first", "Battery First": "Battery first", "Smart Mode": "Smart", "Smart": "Smart", "Grid First": "Smart" } as Record<string, string>,
         grid: "Grid", household: "Household", smartCtl: "Smart control", gridIn: "draw", gridOut: "feed-in", shOut: "Output", shTarget: "Target", shSetpoint: "setpoint", shUnreach: "Shelly unreachable", on: "on", off: "off",
         reasons: { battery_low: "battery at the discharge limit, NEXA delivers less than the target", device_limited: "NEXA delivers less than the target", device_offline: "NEXA offline", wrong_mode: "NEXA not in Load first, controller is switching the slot mode back" } as Record<string, string>,
         costs: "Costs and savings", costsAt: "at {p} ct/kWh", costsSet: "set on the GroLo settings page", costsDefault: "default, not set yet", saved: "saved", month: "This month", year: "This year", gridCost: "grid cost", feedinRev: "feed-in revenue",
@@ -65,7 +65,7 @@ const T = {
         total: "Gesamt seit", daily: "Energie pro Tag (kWh)", pieA: "Wohin ging der PV-Strom heute?", pieB: "Woher kam der Hausstrom heute?",
         direct: "Direkt ins Haus", intoBat: "In die Batterie", fromPv: "Direkt aus PV", fromBat: "Aus der Batterie",
         hardware: "Hardware", pack: "Pack", temp: "Temperatur", dongle: "WLAN-Dongle", wifi: "WLAN-Signal", string: "String", free: "frei",
-        modes: { "Load First": "Last zuerst", "Battery First": "Batterie zuerst", "Smart Mode": "Smart" } as Record<string, string>,
+        modes: { "Load First": "Last zuerst", "Battery First": "Batterie zuerst", "Smart Mode": "Smart", "Smart": "Smart", "Grid First": "Smart" } as Record<string, string>,
         grid: "Netz", household: "Haushalt", smartCtl: "Smart-Regelung", gridIn: "Bezug", gridOut: "Einspeisung", shOut: "Ausgabe", shTarget: "Ziel", shSetpoint: "Sollwert", shUnreach: "Shelly nicht erreichbar", on: "an", off: "aus",
         reasons: { battery_low: "Batterie an der Entladegrenze, NEXA liefert weniger als das Ziel", device_limited: "NEXA liefert weniger als das Ziel", device_offline: "NEXA offline", wrong_mode: "NEXA nicht auf Last zuerst, Regler stellt den Slot-Modus zurück" } as Record<string, string>,
         costs: "Kosten und Ersparnis", costsAt: "bei {p} ct/kWh", costsSet: "einstellbar auf der GroLo-Einstellungsseite", costsDefault: "Standard, noch nicht gesetzt", saved: "gespart", month: "Dieser Monat", year: "Dieses Jahr", gridCost: "Netzkosten", feedinRev: "Einspeisevergütung",
@@ -176,7 +176,7 @@ export default function Page() {
               <Tile k={t.mode} v={l?.mode ? (t.modes[l.mode] || l.mode) : "–"} />
               <Tile k={t.tsys} v={l?.temp_sys != null ? l.temp_sys.toFixed(1) : "–"} unit="°C" />
             </div>
-            {l && <div className="explain">{explainSmart(lang, { pv: l.pv_w, out: l.out_w, bat: l.bat_w, soc: l.soc, mode: l.mode ? (t.modes[l.mode] || l.mode) : null, sh: sh ?? null, live: !!live }, fmtW)}</div>}
+            {l && <div className="explain">{explainSmart(lang, { pv: l.pv_w, out: l.out_w, bat: l.bat_w, soc: l.soc, mode: l.mode ? (t.modes[l.mode] || l.mode) : null, modeRaw: l.mode ?? null, sh: sh ?? null, live: !!live }, fmtW)}</div>}
             </div>
           </div>
         </section>); })()}
